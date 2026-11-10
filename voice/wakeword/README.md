@@ -68,6 +68,16 @@ A first model often misses one of these. That's normal. Change the cells marked 
 Once it's on Dewy, test it for real: say it from across the room, with music or the TV on, and leave Dewy
 listening during a long conversation to count false wake-ups.
 
+## The trained model
+
+The first model is in [`model/`](model/): `stream_state_internal_quant.tflite` (60 KB) and `hey_dewy.json` (its settings).
+`python3 make_model_header.py` turns them into the C header for the firmware.
+
+Test results of this first model (on the compressed model, with computer-made test voices, so real voices will do
+worse): at cutoff 0.98 it hears about 82% of "Hey Dewy" with one false wake-up per 1.8 hours of dinner-party talk;
+at 0.97, 84% and one per 53 minutes. It was trained without the extra AudioSet noise (that download failed, see
+the notebook), so a second round with it should help. The real test is with the mic on Dewy.
+
 ## Next: on Dewy
 
 The firmware side still has to be written, and gets built once the mic arrives. The ESP32 will:

@@ -1,0 +1,31 @@
+{
+  "wake_word": "Hey Dewy",
+  "probability_cutoff": 0.98,
+  "sliding_window_size": 5,
+  "feature_step_size": 10,
+  "tensor_arena_size": 30000,
+  "model_bytes": 62200,
+  "spellings": [
+    "hey doo ee",
+    "hey dew ee",
+    "hey doo-ee"
+  ],
+  "negative_phrases": [
+    "hey buddy",
+    "hey dude",
+    "hey judy",
+    "hey julie",
+    "hey you",
+    "do we",
+    "dewey",
+    "hey doctor",
+    "hey drew",
+    "duty",
+    "hey dewey decimal",
+    "hey siri",
+    "okay google",
+    "hey there",
+    "hey, do it",
+    "how do we"
+  ]
+}
