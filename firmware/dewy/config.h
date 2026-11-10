@@ -88,3 +88,10 @@
 #endif
 
 #define FRAME_MS        33         // about 30 frames a second
+
+// ---------------- cloud (the phone app's server; address and key are in secrets.h) ----------------
+#define DEWY_VERSION    "1.0.0"    // bump this for every firmware update you publish
+#define SYNC_AWAKE_MS   8000       // how often Dewy checks in with the server while awake...
+#define SYNC_ASLEEP_MS  60000      // ...and while asleep
+#define SETUP_HOTSPOT   1          // open the "Dewy-Setup" Wi-Fi when there's no Wi-Fi to join
+#define SETUP_AP_NAME   "Dewy-Setup"

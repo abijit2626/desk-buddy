@@ -1,0 +1,19 @@
+{
+  "name": "dewy-cloud",
+  "version": "1.0.0",
+  "description": "Dewy cloud: Cloudflare Worker and phone app",
+  "scripts": {
+    "dev": "wrangler dev",
+    "check": "tsc",
+    "deploy": "wrangler deploy",
+    "db:local": "wrangler d1 migrations apply dewy --local",
+    "db:remote": "wrangler d1 migrations apply dewy --remote",
+    "test": "node test/smoke.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261110.1",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.159.0"
+  },
+  "private": true
+}

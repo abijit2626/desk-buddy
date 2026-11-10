@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <cstring>
+#include "Arduino.h"
 struct Preferences {
   std::map<std::string, std::vector<uint8_t>> m;
   bool begin(const char*, bool) { return true; }
@@ -13,4 +14,7 @@ struct Preferences {
   size_t putFloat(const char* k, float v) { return putBytes(k, &v, 4); }
   uint32_t getUInt(const char* k, uint32_t d) { uint32_t v = d; if (getBytesLength(k) == 4) getBytes(k, &v, 4); return v; }
   size_t putUInt(const char* k, uint32_t v) { return putBytes(k, &v, 4); }
+  String getString(const char* k, const char* d = "") { auto i = m.find(k); return i == m.end() ? String(d) : String(std::string(i->second.begin(), i->second.end())); }
+  size_t putString(const char* k, const String& v) { m[k].assign(v.s.begin(), v.s.end()); return v.s.size(); }
+  bool remove(const char* k) { return m.erase(k) > 0; }
 };

@@ -10,7 +10,7 @@ inline uint32_t millis() { static uint32_t t = 0; return t += 7; }
 inline void delay(uint32_t) {}
 inline uint32_t esp_random() { return 1; }
 struct String {
-  std::string s; String() {} String(const char* c) : s(c) {}
+  std::string s; String() {} String(const char* c) : s(c ? c : "") {} String(const std::string& x) : s(x) {}
   void trim() { size_t a = s.find_first_not_of(" \t\r\n"), b = s.find_last_not_of(" \t\r\n"); s = a == std::string::npos ? "" : s.substr(a, b - a + 1); }
   void toLowerCase() { for (auto& c : s) c = char(tolower(c)); }
   unsigned length() const { return s.size(); }
@@ -22,7 +22,29 @@ struct String {
   bool operator==(const char* o) const { return s == o; }
   String& operator+=(char c) { s += c; return *this; }
   String& operator=(const char* c) { s = c; return *this; }
+  String& operator+=(const char* c) { s += c; return *this; }
+  String& operator+=(const String& o) { s += o.s; return *this; }
+  bool operator==(const String& o) const { return s == o.s; }
+  friend String operator+(const String& a, const String& b) { return String(a.s + b.s); }
+  friend String operator+(const String& a, const char* b) { return String(a.s + b); }
+  friend String operator+(const char* a, const String& b) { return String(std::string(a) + b.s); }
 };
+#ifndef constrain
+#define constrain(x, lo, hi) ((x) < (lo) ? (lo) : ((x) > (hi) ? (hi) : (x)))
+#endif
+#include <algorithm>
+using std::min; using std::max;
+struct EspClass { void restart() { printf("[mock] ESP.restart()\n"); } };
+inline EspClass ESP;
+// FreeRTOS mutexes (the PC tests run on one thread)
+typedef void* SemaphoreHandle_t;
+#define portMAX_DELAY 0xffffffffu
+inline SemaphoreHandle_t xSemaphoreCreateMutex() { static int m; return &m; }
+inline int xSemaphoreTake(SemaphoreHandle_t, uint32_t) { return 1; }
+inline int xSemaphoreGive(SemaphoreHandle_t) { return 1; }
+#if !defined(__GLIBC__) || __GLIBC__ < 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ < 38)
+inline size_t strlcpy(char* d, const char* s, size_t n) { size_t l = strlen(s); if (n) { size_t c = l < n - 1 ? l : n - 1; memcpy(d, s, c); d[c] = 0; } return l; }
+#endif
 struct SerialT { void begin(int) {} void println(const char* s) { printf("%s\n", s); } int printf(const char* f, ...) { va_list a; va_start(a, f); int n = vprintf(f, a); va_end(a); return n; } int available() { return 0; } int read() { return 0; } };
 extern SerialT Serial;
 inline uint32_t analogReadMilliVolts(uint8_t) { return 1900; }

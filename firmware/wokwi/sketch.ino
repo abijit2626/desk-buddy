@@ -209,13 +209,16 @@ static void pollOrientation(uint32_t now) {
   buddy.setTilt(tiltX, tiltY, tiltShown);
 }
 
-// ---------------- Wi-Fi: time, updates, weather ----------------
-static bool wifiWanted() { return strlen(WIFI_SSID) > 0; }
+// ---------------- Wi-Fi, updates over Wi-Fi, the cloud ----------------
+#include "cloud.h"
+#include "portal.h"
+
 static bool otaOn = false;
-static volatile int weatherFromTask = -1;   // written by the weather task, read by the loop
+static uint32_t wifiStartAt = 0;
+static char wifiSsid[33] = "", wifiPass[64] = "";
 
 static void startOta() {
-  if (!strlen(OTA_PASSWORD)) { Serial.println("Updates over Wi-Fi are off: set OTA_PASSWORD in secrets.h"); return; }
+  if (!strlen(OTA_PASSWORD)) { Serial.println("Updates over Wi-Fi from the Arduino IDE are off: set OTA_PASSWORD in secrets.h"); return; }
   ArduinoOTA.setHostname(OTA_HOSTNAME);
   ArduinoOTA.setPassword(OTA_PASSWORD);
   ArduinoOTA.onStart([]() { buddy.setUpdateProgress(0); drawFrame(); });
@@ -228,101 +231,182 @@ static void startOta() {
   ArduinoOTA.onError([](ota_error_t e) { Serial.printf("Update failed (error %u)\n", unsigned(e)); buddy.setUpdateProgress(-1); buddy.reset(); });
   ArduinoOTA.begin();
   otaOn = true;
-  Serial.printf("Updates over Wi-Fi: on, as \"%s\"\n", OTA_HOSTNAME);
+  Serial.printf("Updates over Wi-Fi from the Arduino IDE: on, as \"%s\"\n", OTA_HOSTNAME);
 }
 
-// Open-Meteo weather codes: 0-1 clear, 2-3 cloudy, 45/48 fog, 51-67 drizzle and rain, 71-77 snow,
-// 80-82 showers, 85-86 snow showers, 95-99 thunder
-static int parseWeather(const char* s) {
-  const char* cur = strstr(s, "\"current\":{");
-  if (!cur) return -1;
-  const char* wc = strstr(cur, "\"weather_code\":");
-  const char* dy = strstr(cur, "\"is_day\":");
-  if (!wc) return -1;
-  int code = atoi(wc + 15), day = dy ? atoi(dy + 9) : 1;
-  if (code <= 1) return day ? face::WEATHER_SUN : face::WEATHER_NONE;
-  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82) || code >= 95) return face::WEATHER_RAIN;
-  return face::WEATHER_CLOUD;
-}
-static void weatherTask(void*) {
-  for (;;) {
-    uint32_t waitMs = 60UL * 1000UL;                     // try again in a minute if it didn't work
-    if (WiFi.status() == WL_CONNECTED) {
-      WiFiClientSecure client;
-      client.setInsecure();                              // public weather data; nothing private is sent
-      HTTPClient http;
-      char url[180];
-      snprintf(url, sizeof url, "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f&current=weather_code,is_day", WEATHER_LAT, WEATHER_LON);
-      if (http.begin(client, url)) {
-        if (http.GET() == 200) {
-          int w = parseWeather(http.getString().c_str());
-          if (w >= 0) { weatherFromTask = w; waitMs = 30UL * 60UL * 1000UL; }
-        }
-        http.end();
-      }
-    }
-    vTaskDelay(pdMS_TO_TICKS(waitMs));
-  }
+// Wi-Fi saved from the setup page wins over secrets.h
+static void loadWifiCreds() {
+  String ss = prefs.getString("wifi_ssid", ""), pw = prefs.getString("wifi_pass", "");
+  if (ss.length()) { strlcpy(wifiSsid, ss.c_str(), sizeof wifiSsid); strlcpy(wifiPass, pw.c_str(), sizeof wifiPass); }
+  else { strlcpy(wifiSsid, WIFI_SSID, sizeof wifiSsid); strlcpy(wifiPass, WIFI_PASSWORD, sizeof wifiPass); }
 }
 
 static void startWifi() {
-  if (!wifiWanted()) { Serial.println("Wi-Fi is off (no WIFI_SSID in secrets.h)"); return; }
+  loadWifiCreds();
   WiFi.setHostname(OTA_HOSTNAME);   // before mode(), or some core versions ignore it
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   sntp_set_time_sync_notification_cb(onTimeSynced);
-  xTaskCreatePinnedToCore(weatherTask, "weather", 10240, nullptr, 1, nullptr, 0);
-  Serial.printf("Connecting to Wi-Fi \"%s\"...\n", WIFI_SSID);
+  if (wifiSsid[0]) { WiFi.begin(wifiSsid, wifiPass); Serial.printf("Connecting to Wi-Fi \"%s\"...\n", wifiSsid); }
+  else if (SETUP_HOTSPOT) startPortal();
+  else Serial.println("Wi-Fi is off (no WIFI_SSID in secrets.h)");
+  wifiStartAt = millis();
+  startNetTask();
 }
-static void pollWifi() {
+
+static void pollWifi(uint32_t now) {
   static bool was = false;
-  if (!wifiWanted()) return;
+  static uint32_t connectedAt = 0;
   bool on = WiFi.status() == WL_CONNECTED;
   if (on && !was) {
     Serial.printf("Wi-Fi connected, IP %s\n", WiFi.localIP().toString().c_str());
-    configTzTime(TIMEZONE, "pool.ntp.org", "time.google.com");
+    configTzTime(S.tz, "pool.ntp.org", "time.google.com");
     if (!otaOn) startOta();
+    connectedAt = now;
   }
   if (!on && was) Serial.println("Wi-Fi lost, reconnecting...");
   was = on;
   if (otaOn) ArduinoOTA.handle();
+  // close the setup hotspot a few seconds after Wi-Fi works; open it if the saved Wi-Fi can't be found
+  if (portalOn && on && now - connectedAt > 4000) stopPortal();
+  if (SETUP_HOTSPOT && !portalOn && !on && now - wifiStartAt > 120000UL && (wifiSsid[0] || prefs.getString("wifi_ssid", "").length() == 0)) {
+    Serial.println("[wifi] can't find the saved Wi-Fi; opening the setup hotspot too");
+    startPortal();
+  }
+  pollPortal();
+}
 
-  static int weatherShown = -1;
-  int w = weatherFromTask;
-  if (w != weatherShown) {
-    weatherShown = w;
-    buddy.setWeather(face::Weather(w));
-    Serial.printf("[weather] %s\n", face::WEATHER_NAMES[w]);
+// ---------------- what comes from the phone app ----------------
+static char noteQ[5][128], noteQFrom[5][24];
+static int noteQn = 0;
+enum BannerKind { BANNER_NONE, BANNER_SETUP, BANNER_PAIR };
+static BannerKind banner = BANNER_NONE;
+static uint32_t bannerHiddenUntil = 0;   // a tap hides the set-up card for a while
+static bool paired = true, pairedKnown = false, pairRequested = false;
+static char pairCode[12] = "";
+
+static void applySettings() {
+  setenv("TZ", S.tz, 1); tzset();
+  cityLat = S.lat; cityLon = S.lon; cityOn = S.hasCity;
+}
+static void loadSavedSettings() {
+  settingsDefaults();
+  String js = prefs.getString("settings", "");
+  if (js.length() && settingsFromJson(js.c_str())) Serial.println("Settings from the phone app loaded");
+  applySettings();
+}
+
+static void showNextNote() {
+  if (!noteQn) return;
+  bool awake = buddy.mood() != face::SLEEPY && !buddy.faceDown();
+  // asleep: hand one note over to keep for waking up; awake: show the next once the screen is free
+  if ((!awake && !buddy.hasPendingNote()) || (awake && !buddy.overlayActive() && !buddy.busy())) {
+    buddy.showNote(noteQ[0], noteQFrom[0]);
+    for (int i = 1; i < noteQn; i++) { memcpy(noteQ[i - 1], noteQ[i], 128); memcpy(noteQFrom[i - 1], noteQFrom[i], 24); }
+    noteQn--;
   }
 }
 
-// ---------------- alarm, birthdays and reminders ----------------
-static int alarmH = -1, alarmM = -1;
+static void setBanner(BannerKind k) {
+  if (k == banner) return;
+  banner = k;
+  char code[12];
+  if (k == BANNER_SETUP) buddy.showBanner("Set up my Wi-Fi", "Join this Wi-Fi on your phone", SETUP_AP_NAME);
+  else if (k == BANNER_PAIR) { snprintf(code, sizeof code, "%.4s %.4s", pairCode, pairCode + 4); buddy.showBanner("Pair your phone", "Type it in the Dewy app", code); }
+  else buddy.clearBanner();
+}
+
+static void pollCloud(uint32_t now) {
+  static uint32_t last = 0;
+  if (now - last < 100) return;
+  last = now;
+  NetInbox in;
+  bool gotSettings = false; int nev = 0; NetEvent ev[10]; int weather = -1;
+  if (netLock) {
+    NetLock lock;
+    gotSettings = inbox.hasSettings;
+    if (gotSettings) { memcpy(in.settingsJson, inbox.settingsJson, sizeof in.settingsJson); inbox.hasSettings = false; }
+    nev = inbox.nev; memcpy(ev, inbox.ev, sizeof ev); inbox.nev = 0;
+    pairedKnown = inbox.pairedKnown; paired = inbox.paired;
+    strlcpy(pairCode, inbox.pairCode, sizeof pairCode);
+    if (!pairCode[0] && inbox.pairedKnown) pairRequested = false;   // used up or run out
+    weather = inbox.weather; inbox.weather = -1;
+  }
+  if (gotSettings && settingsFromJson(in.settingsJson)) {
+    prefs.putString("settings", in.settingsJson);
+    applySettings();
+    Serial.println("[cloud] new settings from the phone app");
+  }
+  for (int i = 0; i < nev; i++) {
+    NetEvent& e = ev[i];
+    if (!strcmp(e.kind, "note")) {
+      if (noteQn < 5) { strlcpy(noteQ[noteQn], e.text, 128); strlcpy(noteQFrom[noteQn], e.from, 24); noteQn++; }
+      Serial.printf("[note] from %s: %s\n", e.from, e.text);
+    } else if (!strcmp(e.kind, "timer_start")) {
+      buddy.startTimer(uint32_t(e.minutes > 0 ? e.minutes : S.study)); interacted();
+      Serial.printf("[timer] %d min from the phone\n", e.minutes);
+    } else if (!strcmp(e.kind, "timer_stop")) {
+      buddy.stopTimer(); Serial.println("[timer] stopped from the phone");
+    }
+    ackId = e.id;
+  }
+  if (weather >= 0) { buddy.setWeather(face::Weather(weather)); Serial.printf("[weather] %s\n", face::WEATHER_NAMES[weather]); }
+
+  // set-up cards: Wi-Fi first, then pairing (decided before notes, so a note never hides under a card)
+  bool hidden = int32_t(bannerHiddenUntil - now) > 0;
+  if (portalOn && !hidden) setBanner(BANNER_SETUP);
+  else if (!portalOn && cloudOn() && pairedKnown && (!paired || pairRequested) && pairCode[0] && !hidden) setBanner(BANNER_PAIR);
+  else setBanner(BANNER_NONE);
+  if (banner == BANNER_PAIR) {   // the code may have been renewed
+    static char shown[12] = "";
+    if (strcmp(shown, pairCode)) { strcpy(shown, pairCode); banner = BANNER_NONE; setBanner(BANNER_PAIR); }
+  }
+  showNextNote();
+
+  // firmware updates: only when nothing important is on screen
+  face::Mood m = buddy.mood();
+  updateAllowed = !buddy.timerActive() && !buddy.overlayActive() && !buddy.busy() && (m == face::HAPPY || m == face::SLEEPY || m == face::BORED);
+  static bool updating = false;
+  float p = fwProgress;
+  if (p >= 0) { buddy.setUpdateProgress(p); updating = true; }
+  else if (updating) { buddy.setUpdateProgress(-1); buddy.reset(); updating = false; }
+  dewyAsleep = m == face::SLEEPY;
+}
+
+// ---------------- alarms, birthdays and reminders ----------------
 static void checkCalendar(uint32_t now) {
   static uint32_t last = 0, lastWater = 0, lastStretch = 0;
-  static int lastAlarmDay = 0;
+  static int lastAlarmKey = -1;
   if (now - last < 15000) return;
   last = now;
   if (!lastWater) { lastWater = now; lastStretch = now; }
   time_t tt = time(nullptr); struct tm tmv; localtime_r(&tt, &tmv);
   int today = (tmv.tm_year + 1900) * 10000 + (tmv.tm_mon + 1) * 100 + tmv.tm_mday;
 
-  // daily alarm (not while it lies on its face: that's quiet time)
-  if (alarmH >= 0 && tmv.tm_hour == alarmH && tmv.tm_min == alarmM && lastAlarmDay != today && !buddy.faceDown()) {
-    lastAlarmDay = today; buddy.alarm(); interacted();
-    Serial.println("[alarm]");
+  // alarms (not while it lies on its face: that's quiet time)
+  for (int i = 0; i < S.nAlarms; i++) {
+    const DewyAlarm& a = S.alarms[i];
+    bool dayOk = a.dayMask == 0 || (a.dayMask & (1 << tmv.tm_wday));
+    int key = today * 100 + i;
+    if (a.on && dayOk && tmv.tm_hour == a.h && tmv.tm_min == a.m && lastAlarmKey != key && !buddy.faceDown()) {
+      lastAlarmKey = key;
+      static char alarmText[8];
+      snprintf(alarmText, sizeof alarmText, "%02d:%02d", a.h, a.m);
+      buddy.alarmText = alarmText;
+      buddy.alarm(); interacted();
+      Serial.printf("[alarm] %s\n", alarmText);
+    }
   }
 
   bool freeNow = buddy.mood() == face::HAPPY && !buddy.faceDown() && !buddy.upsideDown() && !buddy.busy() && !buddy.overlayActive();
 
   // reminders, only during the day
-  bool day = tmv.tm_hour >= REMIND_FROM_HOUR && tmv.tm_hour < REMIND_TO_HOUR;
-  if (REMIND_WATER_MIN > 0 && now - lastWater > REMIND_WATER_MIN * 60000UL) {
+  bool day = tmv.tm_hour >= S.from && tmv.tm_hour < S.to;
+  if (S.water > 0 && now - lastWater > S.water * 60000UL) {
     if (!day || buddy.mood() == face::SLEEPY || buddy.faceDown()) lastWater = now;   // skipped
     else if (freeNow) { lastWater = now; buddy.remind(face::REMIND_WATER); Serial.println("[remind] water"); }
   }
-  if (REMIND_STRETCH_MIN > 0 && now - lastStretch > REMIND_STRETCH_MIN * 60000UL) {
+  if (S.stretch > 0 && now - lastStretch > S.stretch * 60000UL) {
     if (!day || buddy.mood() == face::SLEEPY || buddy.faceDown()) lastStretch = now;
     else if (freeNow) { lastStretch = now; buddy.remind(face::REMIND_STRETCH); Serial.println("[remind] stretch"); }
   }
@@ -330,8 +414,8 @@ static void checkCalendar(uint32_t now) {
   // birthdays: hers, and the buddy's own (the day it was given, from the next year on).
   // Only with a real date from the internet, the first time it's awake after 8 am, once a day.
   if (!clockIsReal || tmv.tm_hour < 8 || !freeNow) return;
-  bool hers = BIRTHDAY_MONTH > 0 && tmv.tm_mon + 1 == BIRTHDAY_MONTH && tmv.tm_mday == BIRTHDAY_DAY;
-  bool own = GIFT_DAY > 0 && tmv.tm_mon + 1 == GIFT_MONTH && tmv.tm_mday == GIFT_DAY && tmv.tm_year + 1900 > GIFT_YEAR;
+  bool hers = S.bdM > 0 && tmv.tm_mon + 1 == S.bdM && tmv.tm_mday == S.bdD;
+  bool own = S.gD > 0 && tmv.tm_mon + 1 == S.gM && tmv.tm_mday == S.gD && tmv.tm_year + 1900 > S.gY;
   if ((hers || own) && prefs.getUInt("bday", 0) != uint32_t(today)) {
     prefs.putUInt("bday", uint32_t(today));
     buddy.birthday(!hers); interacted();
@@ -370,7 +454,7 @@ static void printHelp() {
   Serial.println("Features: 8ball, weather sun|cloud|rain|off|show, timer [minutes] | timer stop,");
   Serial.println("          remind water|stretch, note <text>, bday [own], battery <0-100>|auto,");
   Serial.println("          affection <0-1>, tilt <x> <y>|off, facedown on|off, upside on|off");
-  Serial.println("Setup:    cal up, cal face, axes, wifi");
+  Serial.println("Setup:    cal up, cal face, axes, wifi, wifi reset, setup, pair");
 }
 
 static void handleCommand(String raw) {
@@ -464,9 +548,20 @@ static void handleCommand(String raw) {
     else Serial.println("  not calibrated: type cal up, then cal face");
   }
   else if (cmd == "wifi") {
-    if (!wifiWanted()) Serial.println("Wi-Fi off (set WIFI_SSID in secrets.h)");
-    else Serial.printf("Wi-Fi %s, clock %s, updates %s, weather %s\n", WiFi.status() == WL_CONNECTED ? "connected" : "not connected",
-                       clockIsReal ? "from the internet" : "from the upload time", otaOn ? "on" : "off", face::WEATHER_NAMES[buddy.weather()]);
+    Serial.printf("Wi-Fi \"%s\" %s, setup hotspot %s, clock %s, IDE updates %s, weather %s\n", wifiSsid, WiFi.status() == WL_CONNECTED ? "connected" : "not connected",
+                  portalOn ? "open" : "closed", clockIsReal ? "from the internet" : "from the upload time", otaOn ? "on" : "off", face::WEATHER_NAMES[buddy.weather()]);
+    Serial.printf("Cloud: %s, %s, %s\n", cloudOn() ? DEWY_SERVER : "off (no DEWY_SERVER in secrets.h)", cloudReady ? "connected" : "not connected yet",
+                  !pairedKnown ? "pairing unknown" : paired ? "paired with a phone" : "no phone paired yet");
+  }
+  else if (cmd == "wifi reset") {
+    prefs.remove("wifi_ssid"); prefs.remove("wifi_pass");
+    Serial.println("Saved Wi-Fi forgotten. Restarting into the setup hotspot...");
+    delay(500); ESP.restart();
+  }
+  else if (cmd == "setup") { startPortal(); bannerHiddenUntil = 0; }
+  else if (cmd == "pair") {
+    if (!cloudOn()) Serial.println("The cloud is off: set DEWY_SERVER in secrets.h");
+    else { wantPair = true; pairRequested = true; bannerHiddenUntil = 0; Serial.println("Asking the server for a pairing code..."); }
   }
   else printHelp();
 }
@@ -495,7 +590,10 @@ static void pollTouch(uint32_t now) {
     touching = false;
     interacted();
     if (petting) buddy.petEnd();
-    else if (lastSeen - downAt < TAP_MAX_MS) { buddy.poke(); addAffection(0.2f); lastTapAt = now; }
+    else if (lastSeen - downAt < TAP_MAX_MS) {
+      if (buddy.bannerShown()) { bannerHiddenUntil = now + 30UL * 60UL * 1000UL; setBanner(BANNER_NONE); return; }   // a tap hides the set-up card
+      buddy.poke(); addAffection(0.2f); lastTapAt = now;
+    }
   }
 #else
   (void)now;
@@ -551,8 +649,8 @@ void setup() {
   if (motion.available() && !calOk) Serial.println("Leaning, face down and upside down need a one-time calibration: type cal up, then cal face");
 
   setClockFromCompileTime();
+  loadSavedSettings();
   refreshDateMask();
-  if (strlen(ALARM_TIME) == 5) { alarmH = atoi(ALARM_TIME); alarmM = atoi(ALARM_TIME + 3); }
 
   font18 = fontFrom(fonts::FreeSansBold18pt7b);
   font24 = fontFrom(fonts::FreeSansBold24pt7b);
@@ -562,7 +660,7 @@ void setup() {
   buddy.mouth = SHOW_MOUTH;
   buddy.catChancePct = CAT_CHANCE_PCT;
   buddy.acornChancePct = ACORN_CHANCE_PCT;
-  buddy.alarmText = alarmH >= 0 ? ALARM_TIME : "07:00";
+  buddy.alarmText = strlen(ALARM_TIME) == 5 ? ALARM_TIME : "07:00";
   buddy.drawDate = drawDate;
   buddy.onMood = printMood;
   buddy.begin(esp_random());
@@ -580,7 +678,8 @@ void loop() {
   pollTouch(now);
   pollMotion(now);
   pollOrientation(now);
-  pollWifi();
+  pollWifi(now);
+  pollCloud(now);
   pollBattery(now);
   checkCalendar(now);
   checkIdle(now);

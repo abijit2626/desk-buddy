@@ -1,0 +1,22 @@
+# Dewy cloud on Cloudflare Workers. See README.md for the one-time setup.
+name = "dewy"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+
+[assets]
+directory = "./app"
+binding = "ASSETS"
+html_handling = "auto-trailing-slash"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "dewy"
+database_id = "REPLACE_WITH_YOUR_D1_ID"   # printed by: npx wrangler d1 create dewy
+migrations_dir = "migrations"
+
+[vars]
+NOTES_PER_DAY = "30"
+
+# nightly tidy-up of old notes and counters
+[triggers]
+crons = ["17 21 * * *"]

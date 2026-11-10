@@ -9,7 +9,7 @@ and tilts, and helps with study timers, reminders, the weather and notes.
 | [`firmware/`](firmware/) | The Arduino code for Dewy, a copy for the Wokwi simulator, and PC tests. Start with [firmware/README.md](firmware/README.md). |
 | [`case/`](case/) | Printable STL files for the case (body, visor, back panel) and the scripts that generate them |
 | [`docs/manual/`](docs/manual/) | The illustrated user manual (PDF) and its source |
-| `cloud/` | Coming next: the Cloudflare server and the phone app |
+| [`cloud/`](cloud/) | The Cloudflare server and the iPhone home-screen app (study timer, notes, alarms, reminders, settings). Start with [cloud/README.md](cloud/README.md). |
 
 ## Hardware
 

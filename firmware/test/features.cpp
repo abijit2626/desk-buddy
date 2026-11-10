@@ -44,6 +44,8 @@ int main() {
   shot("tilt_right", [](Face& f) { f.setTilt(1, 0); }, 1500);
   shot("tilt_back", [](Face& f) { f.setTilt(0, 1); }, 1500);
   shot("facedown", [](Face& f) { f.setFaceDown(true); }, 1500);
+  shot("setup_card", [](Face& f) { f.showBanner("Set up my Wi-Fi", "Join this Wi-Fi on your phone", "Dewy-Setup"); }, 1500);
+  shot("pair_card", [](Face& f) { f.showBanner("Pair your phone", "Type it in the Dewy app", "ZG3U T4CS"); }, 1500);
   // a note that arrives while asleep shows up on waking
   { Face f; fresh(f); f.sleep(); run(f, 500); f.showNote("Waiting for you"); run(f, 500);
     printf("pending while asleep: %d\n", f.hasPendingNote()); f.wake(); run(f, 3000); printf("pending after wake: %d\n", f.hasPendingNote());
