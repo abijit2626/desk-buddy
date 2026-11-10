@@ -1,0 +1,6 @@
+.deps
+cloud_bin
+features_bin
+orient_bin
+*.png
+!README.png

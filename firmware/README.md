@@ -10,12 +10,17 @@ The animated face for Dewy, the ESP32-S3 desk buddy, plus everything it does:
 - **Magic 8-ball:** tap, then shake within 4 seconds
 - **Wi-Fi:** the real time, **weather in its eyes** (sunglasses, cloud, rain) and **updates over Wi-Fi**
 - **Study timer**, **water and stretch reminders**, **notes**, **birthday party**, **a personality that grows**, **low-battery face**
+- **Phone app** (see [../cloud](../cloud)): Wi-Fi setup through Dewy's own hotspot, pairing with a code on screen,
+  settings, alarms and reminders from her iPhone, notes from you, and **updates from anywhere**
 
 ```
 dewy/                   open this in the Arduino IDE (the real hardware)
   dewy.ino              setup, loop, touch, motion, Wi-Fi, weather, calendar, serial test commands
   config.h              pins and settings: change things here
-  secrets.example.h     copy to secrets.h for your Wi-Fi and update passwords (never uploaded)
+  secrets.example.h     copy to secrets.h for your Wi-Fi, passwords and server address (never uploaded)
+  cloud.h               talks to the Cloudflare server: sync, weather, firmware updates (on the second core)
+  portal.h              the "Dewy-Setup" Wi-Fi hotspot and its setup page
+  cacerts.h             root certificates for HTTPS (made by tools/make_cacerts.py)
   face.h                the face engine and drawing (plain C++)
   display.h             screen + touch setup (LovyanGFX)
   motion.h              shake and pick-up detection (MPU6050)
@@ -41,7 +46,7 @@ The simulator draws slower than the real screen, and it has no touch chip, so us
 ## Flash it to the real buddy (when the parts arrive)
 
 1. Arduino IDE 2, then **Boards Manager**: install **esp32 by Espressif Systems**.
-2. **Library Manager**: install **LovyanGFX**.
+2. **Library Manager**: install **LovyanGFX** and **ArduinoJson** (version 7).
 3. Open `dewy/dewy.ino`. Copy `secrets.example.h` to `secrets.h` in the same folder and fill it in (leave it empty to keep Wi-Fi off).
 4. Tools menu, these settings matter:
    - Board: **ESP32S3 Dev Module**
@@ -70,6 +75,36 @@ The simulator draws slower than the real screen, and it has no touch chip, so us
 | `QUICK_TIMINGS` | `0` before gifting |
 
 **Passwords go in `secrets.h`, never in config.h.** The repo's `.gitignore` keeps `secrets.h` off GitHub; don't share it anywhere else either.
+
+## The phone app
+
+1. Set up the server once: follow [cloud/README.md](../cloud/README.md). It gives you an address like
+   `https://dewy.<you>.workers.dev` and a register key.
+2. In `secrets.h`, set `DEWY_SERVER` to that address and `DEWY_REGISTER_KEY` to the register key. You can
+   leave `WIFI_SSID` empty: Dewy will ask for Wi-Fi itself.
+3. Upload. With no Wi-Fi saved, Dewy shows **Set up my Wi-Fi / Dewy-Setup**. Join that Wi-Fi on an iPhone, and a
+   page pops up to pick the home Wi-Fi and type its password.
+4. Once online, Dewy registers with the server and shows **Pair your phone** with an 8-character code. Type it in
+   the app. A tap on Dewy's screen hides the card for 30 minutes.
+
+If the saved Wi-Fi can't be found for two minutes (a new home, a new router), the Dewy-Setup hotspot opens
+again. Serial commands for testing: `wifi` (status), `wifi reset` (forget the Wi-Fi), `setup` (open the hotspot),
+`pair` (show a new pairing code).
+
+Settings from the app are saved in flash, so alarms, reminders and birthdays keep working if the internet drops.
+Without a server (`DEWY_SERVER` empty) everything falls back to the values in config.h.
+
+## Updates from anywhere
+
+Bump `DEWY_VERSION` in config.h, build with **Sketch > Export Compiled Binary**, attach the `.bin` to a GitHub
+release, and run `cloud/scripts/publish-firmware.mjs`. Every Dewy on an older version downloads it at a quiet
+moment (no timer, nothing on screen), checks its SHA-256 against what the server says, installs it and restarts.
+A file that doesn't match is never installed.
+
+## PC tests
+
+`test/run_tests.sh` compiles both sketches against stand-in libraries and runs the motion, orientation,
+cloud (sync, pairing, notes, settings, firmware check, setup page) and face-render tests. It needs g++ and git.
 
 ## One-time calibration (for leaning, face down and upside down)
 
@@ -111,9 +146,11 @@ Updates over Wi-Fi only work on the same Wi-Fi network, so do them when you're a
 ## Before it becomes a gift
 
 - In `config.h` set `QUICK_TIMINGS` to `0`, so it gets bored after 30 minutes instead of 20 seconds.
-- Fill in her Wi-Fi, her city, her birthday and the gift date, then calibrate it in its case.
+- Set up the phone app (above) so her city, birthday, the gift date, alarms and reminders come from her phone,
+  then calibrate it in its case.
 - Set `BATTERY_ENABLED` to `1` once the resistors are fitted.
 - Eye colours and their chances are the `PALETTES` table at the top of `face.h`. The last number on each
   line is its chance per thousand (29 = 2.9%); add or change lines freely. They don't have to add up to
   exactly 1000: the code works out the odds from whatever is there.
-- Starting the study timer, setting reminders and alarms, and sending notes from anywhere will come with the phone app. Until then, use the settings above and the Serial Monitor commands.
+- Without the phone app, the study timer and notes work from the Serial Monitor, and alarms, reminders and
+  birthdays come from config.h.

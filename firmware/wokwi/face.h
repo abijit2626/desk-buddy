@@ -612,8 +612,9 @@ public:
   }
 
   // ---- notes. Kept until it is awake if it arrives while it sleeps or lies on its face.
-  void showNote(const char* text) {
+  void showNote(const char* text, const char* from = nullptr) {
     asciiFold(text ? text : "", note, sizeof note);
+    asciiFold(from && *from ? from : (noteFrom ? noteFrom : ""), noteBy, sizeof noteBy);
     if (moodNow == SLEEPY || faceDownOn) notePending = true; else startNote();
   }
   bool hasPendingNote() const { return notePending; }
@@ -644,9 +645,21 @@ public:
     updateP = p;
   }
 
+  // ---- a message card for setting up (Wi-Fi, pairing). It stays until cleared.
+  void showBanner(const char* title, const char* line, const char* big) {
+    asciiFold(title ? title : "", bTitle, sizeof bTitle);
+    asciiFold(line ? line : "", bLine, sizeof bLine);
+    asciiFold(big ? big : "", bBig, sizeof bBig);
+    if (!bannerOn) bannerAt = t;
+    bannerOn = true;
+    if (moodNow == SLEEPY || moodNow == BORED) play1(HAPPY);
+  }
+  void clearBanner() { bannerOn = false; }
+  bool bannerShown() const { return bannerOn; }
+
   // something is on screen that shouldn't be cut short by falling asleep
   bool overlayActive() const {
-    return (eightAt >= 0 && t < eightAt + 4200) || (noteAt >= 0 && t < noteAt + NOTE_MS) || (bdayAt >= 0 && t < bdayAt + 8000) ||
+    return bannerOn || (eightAt >= 0 && t < eightAt + 4200) || (noteAt >= 0 && t < noteAt + NOTE_MS) || (bdayAt >= 0 && t < bdayAt + 8000) ||
            (remindAt >= 0 && t < remindAt + 6000) || (weatherAt >= 0 && t < weatherAt + weatherDur) || (breakAt >= 0 && t < breakAt + 5000) || updateP >= 0;
   }
 
@@ -808,12 +821,13 @@ private:
   bool timerOn = false; float timerStart = 0, timerDur = 0, breakAt = -1;
   Reminder remindKind = REMIND_WATER; float remindAt = -1;
   static const int NOTE_MS = 10000;
-  char note[128] = ""; float noteAt = -1; bool notePending = false;
+  char note[128] = "", noteBy[24] = ""; float noteAt = -1; bool notePending = false;
   float bdayAt = -1; bool bdayOwn = false;
   struct Bit { float x, y, v, r, s; uint8_t col; };
   static const int NCONF = 40;
   Bit conf[NCONF];
   float affection = 0; int battery = -1; float updateP = -1;
+  bool bannerOn = false; float bannerAt = 0; char bTitle[40] = "", bLine[72] = "", bBig[24] = "";
 
   static float fade(float e, float dur, float in, float out) {
     if (e < 0 || e > dur) return 0;
@@ -970,7 +984,7 @@ private:
         const RGB card = hex(0xFFF4F8), ink = hex(0x2A1520);
         float cy = 136 + (1 - clampf(e / 250, 0, 1)) * 16;
         roundRect(cv, 20, cy, 280, 98, r14, card, 0.95f * a, card, 0, 0);
-        char from[40]; snprintf(from, sizeof from, "From %s", noteFrom ? noteFrom : "");
+        char from[40]; snprintf(from, sizeof from, "From %s", noteBy);
         say(cv, TEXT_SMALL, from, 38, cy + 16, 0, hex(0xC8106B), a);
         const Font* f; int ss;
         if (fontFor(TEXT_MEDIUM, f, ss)) {
@@ -1005,6 +1019,22 @@ private:
         }
         say(cv, TEXT_LARGE, bdayOwn ? "It's my birthday!" : "Happy birthday!", 160, 226, 1, hex(0xFFD21F), a);
       }
+    }
+
+    // set-up card (Wi-Fi, pairing code)
+    if (bannerOn) {
+      float a = clampf((t - bannerAt) / 250, 0, 1);
+      const float r14[4] = { 14, 14, 14, 14 };
+      const RGB card = hex(0xFFF4F8), ink = hex(0x2A1520);
+      const float cy = 128;
+      roundRect(cv, 20, cy, 280, 106, r14, card, 0.96f * a, card, 0, 0);
+      say(cv, TEXT_SMALL, bTitle, 160, cy + 16, 1, hex(0xC8106B), a);
+      const Font* f; int ss;
+      if (fontFor(TEXT_MEDIUM, f, ss)) {
+        int st[2], ln[2]; int n = wrapText(*f, ss, bLine, 252, st, ln, 2);
+        for (int i = 0; i < n; i++) drawString(cv, *f, ss, bLine + st[i], 160, cy + 39 + i * 21 - (n - 1) * 4, 1, ink, a, ln[i]);
+      }
+      say(cv, TEXT_LARGE, bBig, 160, cy + 86, 1, ink, a);
     }
 
     // magic 8-ball answer: the face goes dark behind a blue triangle
@@ -1080,7 +1110,7 @@ private:
     // where to look: tilt beats reading a note or studying, which beat looking around
     bool canLook = moodNow == HAPPY || moodNow == TALKING || moodNow == BORED;
     if (canLook && tiltOn) { w = 1; ggx = tiltX * 26; ggy = tiltY * 16; }
-    else if (moodNow == HAPPY && noteShowing()) { w = 1; ggx = 0; ggy = 16; }
+    else if (moodNow == HAPPY && (noteShowing() || bannerOn)) { w = 1; ggx = 0; ggy = 16; }
     else if (moodNow == HAPPY && timerOn) { w = 1; ggx = 0; ggy = 14; }
     if (w > 0) {
       tgt[Lpx] += ggx * w; tgt[Rpx] += ggx * w; tgt[Lpy] += ggy * w; tgt[Rpy] += ggy * w;

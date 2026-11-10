@@ -35,9 +35,11 @@
 // ---------------- Wi-Fi ----------------
 #define WIFI_SSID       "Wokwi-GUEST"   // the simulator's own Wi-Fi (no password)
 #define WIFI_PASSWORD   ""
+#define OTA_PASSWORD    ""              // updates over Wi-Fi are off in the simulator
+#define DEWY_SERVER        ""           // set to your server's address to try the phone app with the simulator
+#define DEWY_REGISTER_KEY  ""
 #define TIMEZONE        "IST-5:30" // India
 #define OTA_HOSTNAME    "dewy"
-#define OTA_PASSWORD    ""         // updates over Wi-Fi are off in the simulator
 
 // ---------------- weather (Open-Meteo: free, no account) ----------------
 #define WEATHER_LAT     10.7867    // Palakkad. Change these to her city.
@@ -84,3 +86,10 @@
 #endif
 
 #define FRAME_MS        33         // about 30 frames a second
+
+// ---------------- cloud (the phone app's server; address and key are in secrets.h) ----------------
+#define DEWY_VERSION    "1.0.0"    // bump this for every firmware update you publish
+#define SYNC_AWAKE_MS   8000       // how often Dewy checks in with the server while awake...
+#define SYNC_ASLEEP_MS  60000      // ...and while asleep
+#define SETUP_HOTSPOT   0          // no phone can join the simulator's hotspot
+#define SETUP_AP_NAME   "Dewy-Setup"
