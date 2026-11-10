@@ -48,7 +48,7 @@ source venv/bin/activate
 pip install -U pip wheel
 pip install "tensorflow[and-cuda]>=2.18"
 # datasets 4 needs extra audio libraries that the notebook doesn't set up, so stay on 3.x
-pip install "datasets<4" scipy tqdm jupyterlab ipywidgets
+pip install "datasets<4" scipy tqdm jupyterlab ipywidgets tensorboard
 pip install 'git+https://github.com/whatsnowplaying/audio-metadata@d4ebb238e6a401bb1a5aaaac60c9e2b3cb30929f'
 [ -d microWakeWord ] || git clone https://github.com/kahrendt/microWakeWord
 pip install -e ./microWakeWord
