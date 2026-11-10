@@ -78,13 +78,21 @@ _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _nv="$("$_here/venv/bin/python" -c "import glob,site; print(':'.join(glob.glob(site.getsitepackages()[0]+'/nvidia/*/lib')))")"
 export LD_LIBRARY_PATH="$_nv:/usr/lib/wsl/lib:${LD_LIBRARY_PATH:-}"
 EOF
+# The voice generator (PyTorch) must NOT see the library path above: it would load TensorFlow's cuDNN
+# instead of its own, and the two versions differ. This wrapper starts it with a clean library path.
+cat > "$WORK/piper-python.sh" <<EOF
+#!/bin/sh
+unset LD_LIBRARY_PATH
+exec "$WORK/venv-piper/bin/python" "\$@"
+EOF
+chmod +x "$WORK/piper-python.sh"
 cat > "$WORK/start.sh" <<EOF
 #!/usr/bin/env bash
 # Opens the training notebook. Run:  bash ~/dewy-wakeword/start.sh   then open the link it prints in your browser.
 cd "$WORK"
 source venv/bin/activate
 source "$WORK/gpu_env.sh"
-export DEWY_PIPER_PYTHON="$WORK/venv-piper/bin/python"
+export DEWY_PIPER_PYTHON="$WORK/piper-python.sh"
 exec jupyter lab --no-browser --ServerApp.root_dir="$WORK"
 EOF
 chmod +x "$WORK/start.sh"
@@ -97,7 +105,7 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 import tensorflow as tf
 print("TensorFlow GPUs:", tf.config.list_physical_devices("GPU"))
 EOF
-venv-piper/bin/python -c "import torch; print('PyTorch sees the GPU:', torch.cuda.is_available())" || true
+"$WORK/piper-python.sh" -c "import torch; x = torch.randn(1, 4, 16, device='cuda'); torch.nn.Conv1d(4, 4, 3).cuda()(x); print('PyTorch GPU and cuDNN work: True')" || echo "PyTorch GPU check failed"
 
 cat <<EOF
 
