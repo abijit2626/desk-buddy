@@ -21,4 +21,6 @@ NOTES_PER_DAY = "30"
 CHATS_PER_DAY = "40"
 CHAT_TOKENS_PER_DAY = "60000"
 TTS_CHARS_PER_DAY = "6000"
-CHAT_MODEL = "claude-haiku-5-5"
+# The thinking step: "workers-ai" runs on Cloudflare's free allowance, no card needed.
+# Set "anthropic" (and store ANTHROPIC_API_KEY as a secret) to use Claude Haiku instead.
+CHAT_PROVIDER = "workers-ai"
