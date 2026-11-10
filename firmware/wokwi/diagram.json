@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "author": "Abijit",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-s3-devkitc-1", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    { "type": "wokwi-ili9341", "id": "lcd", "top": -60, "left": 260, "rotate": 90, "attrs": {} },
+    { "type": "wokwi-mpu6050", "id": "imu", "top": 260, "left": 220, "attrs": {} }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "lcd:VCC", "esp:3V3.1", "red", [] ],
+    [ "lcd:GND", "esp:GND.1", "black", [] ],
+    [ "lcd:CS", "esp:10", "orange", [] ],
+    [ "lcd:RST", "esp:8", "white", [] ],
+    [ "lcd:D/C", "esp:9", "violet", [] ],
+    [ "lcd:MOSI", "esp:11", "blue", [] ],
+    [ "lcd:SCK", "esp:12", "yellow", [] ],
+    [ "lcd:MISO", "esp:13", "green", [] ],
+    [ "lcd:LED", "esp:7", "gray", [] ],
+    [ "imu:VCC", "esp:3V3.2", "red", [] ],
+    [ "imu:GND", "esp:GND.2", "black", [] ],
+    [ "imu:SDA", "esp:4", "blue", [] ],
+    [ "imu:SCL", "esp:5", "yellow", [] ],
+    [ "imu:INT", "esp:2", "gray", [] ]
+  ],
+  "dependencies": {}
+}

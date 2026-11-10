@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Desk Buddy Manual</title>
+<style>
+@font-face { font-family: "Fredoka"; font-weight: 500; src: url("node_modules/@fontsource/fredoka/files/fredoka-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "Fredoka"; font-weight: 600; src: url("node_modules/@fontsource/fredoka/files/fredoka-latin-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "Nunito"; font-weight: 400; src: url("node_modules/@fontsource/nunito/files/nunito-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Nunito"; font-weight: 600; src: url("node_modules/@fontsource/nunito/files/nunito-latin-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "Nunito"; font-weight: 700; src: url("node_modules/@fontsource/nunito/files/nunito-latin-700-normal.woff2") format("woff2"); }
+@font-face { font-family: "Nunito"; font-weight: 800; src: url("node_modules/@fontsource/nunito/files/nunito-latin-800-normal.woff2") format("woff2"); }
+
+@page { size: 148mm 210mm; margin: 0; }
+:root {
+  --paper: #FFF6F9; --card: #FFFFFF; --ink: #2A1520; --muted: #7A5C6A; --line: #F3D9E4;
+  --pink: #E0457B; --pink-deep: #C8106B; --pink-soft: #FCE3EE;
+  --mint: #CFF5E5; --mint-ink: #146B4C; --lav: #EADFFF; --lav-ink: #5A3A9A; --lemon: #FFF3B8; --lemon-ink: #7A5A00; --sky: #DDEFFF; --sky-ink: #1D5A8F;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--paper); }
+body { font-family: "Nunito", sans-serif; font-weight: 600; color: var(--ink); font-size: 9.6pt; line-height: 1.45; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.page { width: 148mm; height: 210mm; position: relative; overflow: hidden; padding: 13mm 12mm 14mm; page-break-after: always; break-after: page; background: var(--paper); display: flex; flex-direction: column; gap: 4.2mm; }
+.page:last-child { page-break-after: auto; break-after: auto; }
+h1, h2, h3 { font-family: "Fredoka", sans-serif; font-weight: 600; margin: 0; line-height: 1.12; }
+h2 { font-size: 21pt; color: var(--pink-deep); }
+h3 { font-size: 12.5pt; color: var(--ink); }
+p { margin: 0; }
+.lede { font-size: 10.4pt; color: var(--muted); font-weight: 600; }
+.kicker { font-family: "Fredoka"; font-weight: 500; font-size: 9pt; letter-spacing: 0.08em; text-transform: uppercase; color: var(--pink); }
+.pnum { position: absolute; bottom: 6.5mm; left: 50%; transform: translateX(-50%); font-family: "Fredoka"; font-weight: 600; font-size: 8pt; color: var(--pink); background: var(--pink-soft); border-radius: 99px; padding: 0.6mm 3.2mm; }
+
+/* decorations */
+.deco { position: absolute; pointer-events: none; }
+.heart { width: 5mm; height: 5mm; }
+.spark { width: 4.5mm; height: 4.5mm; }
+
+/* screens and the buddy */
+.tile { background: #000; border-radius: 2.6mm; overflow: hidden; aspect-ratio: 4 / 3; box-shadow: 0 0.6mm 0 #E9C8D6; }
+.tile img { display: block; width: 100%; height: 100%; }
+.tile.flip img { transform: rotate(180deg); }
+.buddy { position: relative; aspect-ratio: 118 / 98; background: #FFFFFF; border: 0.9mm solid #2A1520; border-radius: 8.5% / 10.2%; box-shadow: 0 1.4mm 0 #E9C8D6; }
+.buddy .visor { position: absolute; left: 5.08%; top: 7.65%; width: 89.83%; height: 80.61%; background: #0B0B0B; border-radius: 9.4% / 12.7%; }
+.buddy .screen { position: absolute; left: 21.61%; top: 21.94%; width: 56.78%; height: 52.04%; border-radius: 3%; overflow: hidden; background: #000; }
+.buddy .screen img { display: block; width: 100%; height: 100%; }
+.buddy .grille { position: absolute; left: 33.05%; top: 92.4%; width: 33.9%; height: 2.4%; background-image: radial-gradient(circle, #B9AEB3 38%, transparent 44%); background-size: 10% 100%; }
+
+/* cards and chips */
+.card { background: var(--card); border-radius: 4mm; padding: 3.6mm 4mm; border: 0.35mm solid var(--line); }
+.chip { display: inline-block; font-family: "Fredoka"; font-weight: 500; font-size: 7.4pt; border-radius: 99px; padding: 0.3mm 2.4mm; vertical-align: 0.3mm; white-space: nowrap; }
+.chip.soon { background: var(--lav); color: var(--lav-ink); }
+.chip.app { background: var(--sky); color: var(--sky-ink); }
+.chip.wifi { background: var(--mint); color: var(--mint-ink); }
+.small { font-size: 8.2pt; color: var(--muted); }
+b, strong { font-weight: 800; }
+
+/* cover */
+.cover { justify-content: center; align-items: center; text-align: center; gap: 6mm; background: radial-gradient(circle at 50% 42%, #FFE3EE 0, #FFF6F9 62%); }
+.cover h1 { font-size: 40pt; color: var(--pink-deep); letter-spacing: 0.01em; }
+.cover .sub { font-family: "Fredoka"; font-weight: 500; font-size: 13pt; color: var(--muted); }
+.cover .buddy { width: 92mm; }
+.cover .made { position: absolute; bottom: 12mm; left: 0; right: 0; text-align: center; font-family: "Fredoka"; font-weight: 500; font-size: 10pt; color: var(--pink); }
+
+/* how-to grid */
+.howto { display: grid; grid-template-columns: 1fr 1fr; gap: 2.8mm; }
+.how { background: var(--card); border: 0.35mm solid var(--line); border-radius: 3.2mm; padding: 3.2mm 3.4mm; display: flex; flex-direction: column; gap: 0.4mm; }
+.how .do { font-family: "Fredoka"; font-weight: 600; font-size: 10.2pt; color: var(--ink); display: flex; align-items: center; gap: 1.8mm; }
+.how .do i { width: 2.6mm; height: 2.6mm; border-radius: 50%; flex: none; }
+.how .then { font-size: 9pt; color: var(--muted); }
+
+/* steps */
+.steps { display: flex; flex-direction: column; gap: 3.4mm; }
+.step { display: grid; grid-template-columns: 11mm 1fr; gap: 3mm; align-items: start; }
+.step .n { width: 11mm; height: 11mm; border-radius: 50%; display: grid; place-items: center; font-family: "Fredoka"; font-weight: 600; font-size: 14pt; color: #fff; }
+.step h3 { margin-bottom: 0.8mm; }
+
+/* mood + eye grids */
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm 3.2mm; }
+.grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2.6mm 2.4mm; }
+.fig { display: flex; flex-direction: column; gap: 1.1mm; }
+.fig .cap { font-family: "Fredoka"; font-weight: 600; font-size: 9pt; line-height: 1.1; }
+.fig .cap span { display: block; font-family: "Nunito"; font-weight: 600; font-size: 7.4pt; color: var(--muted); line-height: 1.25; margin-top: 0.4mm; }
+.odds { display: flex; gap: 2mm; flex-wrap: wrap; }
+.odds .o { flex: 1 1 0; background: var(--card); border: 0.35mm solid var(--line); border-radius: 3mm; padding: 2mm 2.4mm; text-align: center; }
+.odds .o b { display: block; font-family: "Fredoka"; font-weight: 600; font-size: 15pt; color: var(--pink-deep); line-height: 1.1; }
+.odds .o span { font-size: 7.8pt; color: var(--muted); }
+
+/* feature rows */
+.feat { display: grid; grid-template-columns: 46mm 1fr; gap: 3.6mm; align-items: center; }
+.feat.rev { grid-template-columns: 1fr 46mm; }
+.feat.big { grid-template-columns: 58mm 1fr; }
+.feat.big.rev { grid-template-columns: 1fr 58mm; }
+.feat .txt { display: flex; flex-direction: column; gap: 1.2mm; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; }
+.trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.6mm; }
+.answers { display: flex; flex-wrap: wrap; gap: 1.2mm; }
+.answers span { background: #E3E9FF; color: #1F3FBF; font-family: "Fredoka"; font-weight: 500; font-size: 7.6pt; border-radius: 99px; padding: 0.2mm 2.2mm; }
+ul.tips { margin: 0; padding-left: 4.6mm; display: flex; flex-direction: column; gap: 1.2mm; }
+ul.tips li::marker { color: var(--pink); }
+
+/* troubleshooting */
+table.fix { width: 100%; border-collapse: separate; border-spacing: 0 1.6mm; }
+table.fix td { background: var(--card); padding: 2.2mm 3mm; vertical-align: top; border-top: 0.35mm solid var(--line); border-bottom: 0.35mm solid var(--line); font-size: 8.8pt; }
+table.fix td:first-child { border-left: 0.35mm solid var(--line); border-radius: 3mm 0 0 3mm; font-family: "Fredoka"; font-weight: 600; font-size: 9.2pt; width: 42%; }
+table.fix td:last-child { border-right: 0.35mm solid var(--line); border-radius: 0 3mm 3mm 0; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="h" viewBox="0 0 20 18"><path d="M10 17.5C4 13 0 9.6 0 5.4 0 2.4 2.3 0 5.2 0 7.2 0 9 1.1 10 2.8 11 1.1 12.8 0 14.8 0 17.7 0 20 2.4 20 5.4 20 9.6 16 13 10 17.5Z"/></symbol>
+    <symbol id="s" viewBox="0 0 20 20"><path d="M10 0C10.9 6.1 13.9 9.1 20 10 13.9 10.9 10.9 13.9 10 20 9.1 13.9 6.1 10.9 0 10 6.1 9.1 9.1 6.1 10 0Z"/></symbol>
+  </defs>
+</svg>
+
+<!-- 1. cover -->
+<section class="page cover">
+  <svg class="deco heart" style="left:18mm; top:26mm; fill:#F7A8C4; transform:rotate(-14deg)"><use href="#h"/></svg>
+  <svg class="deco spark" style="right:20mm; top:34mm; fill:#FFD21F"><use href="#s"/></svg>
+  <svg class="deco spark" style="left:24mm; bottom:52mm; fill:#C4A1FF"><use href="#s"/></svg>
+  <svg class="deco heart" style="right:22mm; bottom:60mm; fill:#6EE7B7; transform:rotate(12deg)"><use href="#h"/></svg>
+  <div class="kicker">A little guide to your new friend</div>
+  <h1>Desk Buddy</h1>
+  <div class="buddy"><div class="visor"></div><div class="screen"><img src="img/mood_happy.png" alt=""></div><div class="grille"></div></div>
+  <div class="sub">How to play with me, look after me,<br>and everything I can do</div>
+  <div class="made">Made by Abijit, just for you</div>
+</section>
+
+<!-- 2. hello + how to play -->
+<section class="page">
+  <svg class="deco heart" style="right:13mm; top:13mm; fill:#F7A8C4; transform:rotate(10deg)"><use href="#h"/></svg>
+  <div class="kicker">Hello!</div>
+  <h2>I'm your Desk Buddy</h2>
+  <p class="lede">I'm a little robot who lives on your desk. I blink, look around, get bored when you ignore me, nap, and wake up with brand new eyes. You don't need any buttons: just touch me, move me, or use my phone app.</p>
+  <h3>How to play with me</h3>
+  <div class="howto">
+    <div class="how"><div class="do"><i style="background:#F5779F"></i>Tap my screen</div><div class="then">I squint, like you poked me.</div></div>
+    <div class="how"><div class="do"><i style="background:#FF6B6B"></i>Tap me 5 times fast</div><div class="then">I get grumpy for a few seconds.</div></div>
+    <div class="how"><div class="do"><i style="background:#FFB27A"></i>Hold a finger on me</div><div class="then">I blush and float little hearts.</div></div>
+    <div class="how"><div class="do"><i style="background:#C4A1FF"></i>Shake me</div><div class="then">I get dizzy, with spiral eyes.</div></div>
+    <div class="how"><div class="do"><i style="background:#7CC4FF"></i>Pick me up</div><div class="then">I look surprised.</div></div>
+    <div class="how"><div class="do"><i style="background:#6EE7B7"></i>Lean me</div><div class="then">My eyes roll toward the low side.</div></div>
+    <div class="how"><div class="do"><i style="background:#2A1520"></i>Lay me on my face</div><div class="then">Quiet time: I nap with my screen off.</div></div>
+    <div class="how"><div class="do"><i style="background:#FFE45E"></i>Turn me upside down</div><div class="then">I ask you to flip me back.</div></div>
+    <div class="how"><div class="do"><i style="background:#1F3FBF"></i>Tap, then shake</div><div class="then">Magic 8-ball: I answer your question.</div></div>
+    <div class="how"><div class="do"><i style="background:#B5B3B6"></i>Leave me alone</div><div class="then">Bored after 30 minutes, asleep after 60.</div></div>
+    <div class="how"><div class="do"><i style="background:#F2AFBB"></i>Touch me while I nap</div><div class="then">I wake up with new eyes.</div></div>
+    <div class="how"><div class="do"><i style="background:#80B5F0"></i>Say my name</div><div class="then">I listen and talk back. <span class="chip soon">coming soon</span></div></div>
+  </div>
+  <div class="pnum">2</div>
+</section>
+
+<!-- 3. getting started -->
+<section class="page">
+  <svg class="deco spark" style="right:14mm; top:14mm; fill:#FFD21F"><use href="#s"/></svg>
+  <div class="kicker">Getting started</div>
+  <h2>Let's be friends</h2>
+  <p class="lede">I'm always on and I run on my own battery. There's no power button: when you want me dark and quiet, lay me on my face.</p>
+  <div class="steps">
+    <div class="step"><div class="n" style="background:#F5779F">1</div><div><h3>Find me a flat spot</h3><p>I can feel which way is up, so a level desk keeps my eyes looking straight at you.</p></div></div>
+    <div class="step"><div class="n" style="background:#FFB27A">2</div><div><h3>Charge me</h3><p>Plug any USB-C phone charger into the socket on my back. I keep playing while I charge.</p></div></div>
+    <div class="step"><div class="n" style="background:#6EE7B7">3</div><div><h3>Get me online</h3><p>The first time I start, I make my own Wi-Fi called <b>Desk Buddy</b>. Join it from your iPhone, a page opens, then pick your home Wi-Fi and type its password. I'll remember it.</p></div></div>
+    <div class="step"><div class="n" style="background:#C4A1FF">4</div><div><h3>Add my app</h3><p>Open my page in Safari, tap <b>Share</b>, then <b>Add to Home Screen</b>. That's where you start study timers, set reminders and alarms, and change my settings.</p></div></div>
+  </div>
+  <div class="card" style="display:flex; gap:3mm; align-items:center; margin-top:1mm">
+    <svg style="width:7mm; height:7mm; flex:none; fill:#F5779F"><use href="#h"/></svg>
+    <p class="small" style="color:var(--ink)">Without Wi-Fi I still blink, react and play. Wi-Fi gives me the right time, the weather, notes from Abijit and new tricks.</p>
+  </div>
+  <div style="margin-top:auto; margin-bottom:4mm; display:flex; align-items:center; justify-content:center; gap:5mm">
+    <div class="buddy" style="width:46mm"><div class="visor"></div><div class="screen"><img src="img/mood_petted.png" alt=""></div><div class="grille"></div></div>
+    <div style="font-family:Fredoka; font-weight:600; font-size:15pt; color:var(--pink-deep); line-height:1.2">Nice to<br>meet you!</div>
+  </div>
+  <div class="pnum">3</div>
+</section>
+
+<!-- 4. moods -->
+<section class="page">
+  <div class="kicker">My faces</div>
+  <h2>12 moods</h2>
+  <p class="lede" style="font-size:9.6pt">I blink every few seconds, glance around and breathe. My mood changes with what you do.</p>
+  <div class="grid3" style="width:106mm; margin:0 auto; gap:2.4mm 3mm">
+    <div class="fig"><div class="tile"><img src="img/mood_happy.png" alt=""></div><div class="cap">Happy<span>My everyday face</span></div></div>
+    <div class="fig"><div class="tile"><img src="img/mood_petted.png" alt=""></div><div class="cap">Petted<span>Your finger on my screen</span></div></div>
+    <div class="fig"><div class="tile"><img src="img/mood_bored.png" alt=""></div><div class="cap">Bored<span>Nobody played for 30 min</span></div></div>
+    <div class="fig"><div class="tile"><img src="img/mood_asleep.png" alt=""></div><div class="cap">Asleep<span>60 min alone, or face down</span></div></div>
+    <div class="fig"><div class="tile"><img src="img/mood_annoyed.png" alt=""></div><div class="cap">Grumpy<span>Poked 5 times in a row</span></div></div>
+    <div class="fig"><div class="tile"><img src="img/mood_dizzy.png" alt=""></div><div class="cap">Dizzy<span>You shook me</span></div></div>
+    <div class="fig"><div class="tile"><img src="img/mood_surprised.png" alt=""></div><div class="cap">Surprised<span>Picked up or poked awake</span></div></div>
+    <div class="fig"><div class="tile"><img src="img/mood_listening.png" alt=""></div><div class="cap">Listening<span>You say my name <span class="chip soon" style="display:inline-block; margin-top:0.4mm">soon</span></span></div></div>
+    <div class="fig"><div class="tile"><img src="img/mood_thinking.png" alt=""></div><div class="cap">Thinking<span>Working out an answer</span></div></div>
+    <div class="fig"><div class="tile"><img src="img/mood_talking.png" alt=""></div><div class="cap">Talking<span>Answering or reminding you</span></div></div>
+    <div class="fig"><div class="tile"><img src="img/mood_alarm.png" alt=""></div><div class="cap">Alarm<span>Time to get up!</span></div></div>
+    <div class="fig"><div class="tile"><img src="img/mood_clock.png" alt=""></div><div class="cap">Clock<span>The time and the date</span></div></div>
+  </div>
+  <div class="pnum">4</div>
+</section>
+
+<!-- 5. eyes -->
+<section class="page">
+  <svg class="deco spark" style="right:14mm; top:14mm; fill:#C4A1FF"><use href="#s"/></svg>
+  <div class="kicker">New eyes every morning</div>
+  <h2>I never look the same</h2>
+  <p class="lede" style="font-size:9.6pt">Every time I wake up, I pick new eye colours and a new pupil shape. I never pick the same colours twice in a row.</p>
+  <div class="grid4">
+    <div class="fig"><div class="tile"><img src="img/set_00.png" alt=""></div><div class="cap">Bubblegum</div></div>
+    <div class="fig"><div class="tile"><img src="img/set_01.png" alt=""></div><div class="cap">Mint</div></div>
+    <div class="fig"><div class="tile"><img src="img/set_02.png" alt=""></div><div class="cap">Lavender</div></div>
+    <div class="fig"><div class="tile"><img src="img/set_03.png" alt=""></div><div class="cap">Kite</div></div>
+    <div class="fig"><div class="tile"><img src="img/set_04.png" alt=""></div><div class="cap">Socks</div></div>
+    <div class="fig"><div class="tile"><img src="img/set_05.png" alt=""></div><div class="cap">Yin Yang</div></div>
+    <div class="fig"><div class="tile"><img src="img/set_06.png" alt=""></div><div class="cap">Classic</div></div>
+    <div class="fig"><div class="tile"><img src="img/set_07.png" alt=""></div><div class="cap">Lemon</div></div>
+    <div class="fig"><div class="tile"><img src="img/set_08.png" alt=""></div><div class="cap">Galaxy</div></div>
+    <div class="fig"><div class="tile"><img src="img/set_09.png" alt=""></div><div class="cap">Cherry Lime</div></div>
+    <div class="fig"><div class="tile"><img src="img/set_10.png" alt=""></div><div class="cap">Parrot</div></div>
+    <div class="fig"><div class="tile"><img src="img/set_11.png" alt=""></div><div class="cap">Peach</div></div>
+  </div>
+  <h3>Pupil shapes</h3>
+  <div class="odds">
+    <div class="o"><b>50%</b><span>round</span></div>
+    <div class="o"><b>20%</b><span>tall acorn</span></div>
+    <div class="o"><b>30%</b><span>cat slits, with a cat mouth</span></div>
+  </div>
+  <h3>46 colour sets</h3>
+  <div class="odds">
+    <div class="o"><b>29</b><span>everyday sets, about 3% each</span></div>
+    <div class="o"><b>16</b><span>rare odd-eyed sets, 14% together</span></div>
+    <div class="o"><b>1</b><span>Kite, extra rare at 2%</span></div>
+  </div>
+  <div class="pnum">5</div>
+</section>
+
+<!-- 6. touch -->
+<section class="page">
+  <svg class="deco heart" style="right:13mm; top:13mm; fill:#F7A8C4; transform:rotate(10deg)"><use href="#h"/></svg>
+  <div class="kicker">Touch me</div>
+  <h2>Pokes, pets and shakes</h2>
+  <p class="lede" style="font-size:9.6pt">My screen feels your finger, and a motion sensor inside feels every bump, lift and lean.</p>
+  <div class="pair" style="width:106mm; margin:0 auto">
+    <div class="fig"><div class="tile"><img src="img/mood_annoyed.png" alt=""></div><div class="cap">Poke<span>A quick tap makes me squint. Five taps in 3 seconds and I'm grumpy for about 4 seconds, then I forgive you.</span></div></div>
+    <div class="fig"><div class="tile"><img src="img/mood_petted.png" alt=""></div><div class="cap">Pet<span>Keep your finger on my screen for a second. I blush and hearts float up until you let go.</span></div></div>
+    <div class="fig"><div class="tile"><img src="img/mood_dizzy.png" alt=""></div><div class="cap">Shake<span>Spiral eyes and a wobbly mouth for 3 seconds. Whoa.</span></div></div>
+    <div class="fig"><div class="tile"><img src="img/mood_surprised.png" alt=""></div><div class="cap">Pick up<span>Big eyes for a second and a half. Picking me up also wakes me.</span></div></div>
+  </div>
+  <div class="card" style="display:grid; grid-template-columns:1fr 26mm 26mm; gap:3mm; align-items:center">
+    <div><h3 style="margin-bottom:1mm">Leave me alone</h3><p class="small" style="color:var(--ink)">After 30 minutes with nobody to play with I get bored. After an hour I nap and dim my screen. Touch me or pick me up to wake me.</p></div>
+    <div class="tile"><img src="img/mood_bored.png" alt=""></div>
+    <div class="tile"><img src="img/mood_asleep.png" alt=""></div>
+  </div>
+  <div class="pnum">6</div>
+</section>
+
+<!-- 7. move -->
+<section class="page">
+  <svg class="deco spark" style="right:14mm; top:14mm; fill:#6EE7B7"><use href="#s"/></svg>
+  <div class="kicker">Move me</div>
+  <h2>Leaning, naps and the 8-ball</h2>
+  <div class="feat">
+    <div style="padding:2mm 3mm"><div class="buddy" style="transform:rotate(10deg)"><div class="visor"></div><div class="screen"><img src="img/x_tilt_right.png" alt=""></div><div class="grille"></div></div></div>
+    <div class="txt"><h3>Lean me</h3><p>Tip me left or right and my pupils roll toward the low side. Tip me back and I look down at you; tip me forward and I look up. Stand me level and I go back to looking around.</p></div>
+  </div>
+  <div class="feat rev">
+    <div class="txt"><h3>Quiet time</h3><p>Lay me on my face and I fall asleep with my screen off. No reminders or alarms while I lie there. Stand me up and I wake with new eyes.</p></div>
+    <svg viewBox="0 0 120 56" style="width:100%">
+      <rect x="4" y="50" width="112" height="3" rx="1.5" fill="#E9C8D6"/>
+      <rect x="18" y="26" width="84" height="24" rx="7" fill="#fff" stroke="#2A1520" stroke-width="2.2"/>
+      <rect x="22" y="44" width="76" height="4" rx="2" fill="#0B0B0B"/>
+      <text x="84" y="20" font-family="Fredoka" font-weight="600" font-size="9" fill="#C4A1FF">z</text>
+      <text x="92" y="13" font-family="Fredoka" font-weight="600" font-size="12" fill="#A68BE0">z</text>
+      <text x="102" y="6" font-family="Fredoka" font-weight="600" font-size="15" fill="#7E62C4" dy="3">Z</text>
+    </svg>
+  </div>
+  <div class="feat">
+    <div style="padding:2mm 3mm"><div class="buddy" style="transform:rotate(180deg)"><div class="visor"></div><div class="screen"><img src="img/x_upside.png" alt=""></div><div class="grille"></div></div></div>
+    <div class="txt"><h3>Upside down</h3><p>Turn me over and I get grumpy and say <b>"Flip me back!"</b>. I flip my face around so you can still read it.</p></div>
+  </div>
+  <div class="feat rev">
+    <div class="txt"><h3>Magic 8-ball</h3><p>Think of a yes-or-no question. Tap my screen once, then shake me within 4 seconds. I get dizzy, then my answer appears.</p>
+      <div class="answers"><span>Yes!</span><span>Definitely</span><span>Without a doubt</span><span>Signs say yes</span><span>Maybe...</span><span>Ask again later</span><span>Not today</span><span>No way</span></div></div>
+    <div class="tile"><img src="img/x_eight.png" alt=""></div>
+  </div>
+  <div class="pnum">7</div>
+</section>
+
+<!-- 8. helpers: weather + timer -->
+<section class="page">
+  <svg class="deco spark" style="right:14mm; top:14mm; fill:#FFD21F"><use href="#s"/></svg>
+  <div class="kicker">I can help</div>
+  <h2>Weather and study time</h2>
+  <h3>Weather in my eyes <span class="chip wifi">Wi-Fi</span></h3>
+  <p>I check the weather for your city every 30 minutes. Each time I wake up, I show you today's weather for about 8 seconds.</p>
+  <div class="trio">
+    <div class="fig"><div class="tile"><img src="img/x_sun.png" alt=""></div><div class="cap">Sunglasses<span>Sunny and clear</span></div></div>
+    <div class="fig"><div class="tile"><img src="img/x_cloud.png" alt=""></div><div class="cap">A cloud<span>Cloudy or foggy</span></div></div>
+    <div class="fig"><div class="tile"><img src="img/x_rain.png" alt=""></div><div class="cap">Rain, and a glum face<span>Rain, drizzle or storms</span></div></div>
+  </div>
+  <h3 style="margin-top:1mm">Study timer <span class="chip app">phone app</span></h3>
+  <p>Start a 25-minute focus session from my app. A bar fills across the top, the minutes left show at the bottom, and I look down as if I'm studying with you. I won't get bored or nap while it runs. When time's up, I beam and tell you to take a break.</p>
+  <div class="pair">
+    <div class="fig"><div class="tile"><img src="img/x_timer.png" alt=""></div><div class="cap">Focusing<span>The bar fills as you go</span></div></div>
+    <div class="fig"><div class="tile"><img src="img/x_break.png" alt=""></div><div class="cap">Break time!<span>You did it</span></div></div>
+  </div>
+  <div class="pnum">8</div>
+</section>
+
+<!-- 9. helpers: reminders + clock -->
+<section class="page">
+  <svg class="deco heart" style="right:13mm; top:13mm; fill:#7CC4FF; transform:rotate(10deg)"><use href="#h"/></svg>
+  <div class="kicker">I can help</div>
+  <h2>Nudges, time and alarms</h2>
+  <h3>Water and stretch reminders <span class="chip app">phone app</span></h3>
+  <p>At the times you set in my app, I look up in surprise and remind you. I skip reminders while I'm napping or lying on my face.</p>
+  <div class="pair">
+    <div class="fig"><div class="tile"><img src="img/x_water.png" alt=""></div><div class="cap">Sip some water</div></div>
+    <div class="fig"><div class="tile"><img src="img/x_stretch.png" alt=""></div><div class="cap">Stretch break!</div></div>
+  </div>
+  <h3 style="margin-top:1mm">Clock and alarm</h3>
+  <p>Ask me the time and my eyes slide up while a big clock and the date fill my screen for 5 seconds <span class="chip soon">voice coming soon</span>. When an alarm from my app goes off, my eyes jiggle and the time flashes. Tap me, shake me or pick me up to snooze.</p>
+  <div class="pair">
+    <div class="fig"><div class="tile"><img src="img/mood_clock.png" alt=""></div><div class="cap">What time is it?</div></div>
+    <div class="fig"><div class="tile"><img src="img/mood_alarm.png" alt=""></div><div class="cap">Wake up!</div></div>
+  </div>
+  <div class="pnum">9</div>
+</section>
+
+<!-- 10. made for you -->
+<section class="page">
+  <svg class="deco heart" style="right:13mm; top:13mm; fill:#F7A8C4; transform:rotate(10deg)"><use href="#h"/></svg>
+  <svg class="deco heart" style="right:22mm; top:20mm; fill:#FFB27A; transform:rotate(-12deg) scale(0.7)"><use href="#h"/></svg>
+  <div class="kicker">Made for you</div>
+  <h2>Notes, parties and growing up</h2>
+  <div class="feat big">
+    <div class="tile"><img src="img/x_note.png" alt=""></div>
+    <div class="txt"><h3>Notes from Abijit <span class="chip wifi">Wi-Fi</span></h3><p>Abijit can send you little notes from wherever he is. A heart pops up, then the note slides in for about 10 seconds. If I'm napping when it arrives, I keep it safe and show you when I wake up.</p></div>
+  </div>
+  <div class="feat big rev">
+    <div class="txt"><h3>Birthday surprise</h3><p>On your birthday, the first time I'm awake after 8 am, I put on a party hat and throw confetti. I celebrate my own birthday every year too: the day I became yours. <span class="chip soon">song coming soon</span></p></div>
+    <div class="tile"><img src="img/x_bday.png" alt=""></div>
+  </div>
+  <div class="feat big">
+    <div class="tile"><img src="img/x_grow.png" alt=""></div>
+    <div class="txt"><h3>I grow a personality</h3><p>I remember how much attention I get, even if my battery runs out. Pets count the most. Over the weeks I get more cheerful: rosy cheeks when I'm resting, and little hearts now and then once I'm really fond of you. I never forget, so I never go back to being shy.</p></div>
+  </div>
+  <div class="pnum">10</div>
+</section>
+
+<!-- 11. battery, care, updates -->
+<section class="page">
+  <svg class="deco spark" style="right:14mm; top:14mm; fill:#6EE7B7"><use href="#s"/></svg>
+  <div class="kicker">Looking after me</div>
+  <h2>Battery, care and new tricks</h2>
+  <p>I'll tell you when I need charging. Plug a USB-C phone charger into my back; it's fine to leave me charging on the desk.</p>
+  <div class="pair">
+    <div class="fig"><div class="tile"><img src="img/x_batt_low.png" alt=""></div><div class="cap">20% or less<span>A battery icon and sleepy eyes</span></div></div>
+    <div class="fig"><div class="tile"><img src="img/x_batt_empty.png" alt=""></div><div class="cap">5% or less<span>"charge me", then I nap</span></div></div>
+  </div>
+  <div class="card">
+    <h3 style="margin-bottom:1.6mm">Please be gentle with me</h3>
+    <ul class="tips">
+      <li>Keep me away from water and hot spots like a car dashboard or a sunny windowsill. My shell is PLA plastic, which softens in strong heat.</li>
+      <li>Wipe my screen with a soft, dry cloth, and tap it with a finger, not a pen or a nail.</li>
+      <li>Leave my back panel closed. My batteries and wires live in there.</li>
+    </ul>
+  </div>
+  <div class="feat big">
+    <div class="tile"><img src="img/x_update.png" alt=""></div>
+    <div class="txt"><h3>New tricks over Wi-Fi</h3><p>Abijit can teach me new tricks over Wi-Fi, so I never need opening. While I learn, a bar fills on my screen. Leave me standing until I restart by myself, usually within a minute.</p></div>
+  </div>
+  <div class="pnum">11</div>
+</section>
+
+<!-- 12. troubleshooting + goodbye -->
+<section class="page">
+  <div class="kicker">Uh oh?</div>
+  <h2>If something seems wrong</h2>
+  <table class="fix">
+    <tr><td>My screen is dark</td><td>Stand me up and tap my screen. Still dark? Charge me for a while.</td></tr>
+    <tr><td>My eyes are closed and my screen is dim</td><td>I'm napping. Tap me or pick me up.</td></tr>
+    <tr><td>My eyes keep looking to one side</td><td>I'm leaning. Put me on a flat surface.</td></tr>
+    <tr><td>The time is wrong</td><td>I set my clock over Wi-Fi. Check the Wi-Fi is on and give me a few minutes.</td></tr>
+    <tr><td>No weather when I wake up</td><td>I need Wi-Fi. The weather can take up to 30 minutes to arrive.</td></tr>
+    <tr><td>I don't notice taps</td><td>Press with the pad of your finger. My screen feels pressure, not a light touch.</td></tr>
+    <tr><td>We moved somewhere with new Wi-Fi</td><td>Ask Abijit to reset my Wi-Fi, then do step 3 of Getting started again.</td></tr>
+  </table>
+  <p class="small">For anything else, ask Abijit.</p>
+  <div style="margin-top:auto; display:flex; align-items:center; gap:5mm; justify-content:center">
+    <div class="buddy" style="width:40mm"><div class="visor"></div><div class="screen"><img src="img/mood_asleep.png" alt=""></div><div class="grille"></div></div>
+    <div style="font-family:Fredoka; font-weight:600; font-size:15pt; color:var(--pink-deep); line-height:1.2">Thanks for<br>looking after me!</div>
+  </div>
+  <div class="pnum">12</div>
+</section>
+
+</body>
+</html>

@@ -1,0 +1,22 @@
+# private settings: never upload these
+firmware/dewy/secrets.h
+cloud/.dev.vars
+.env
+*.secret
+
+# build and test output
+node_modules/
+.wrangler/
+firmware/test/out/
+firmware/test/feat/
+firmware/test/demo_frames/
+firmware/test/*_bin
+firmware/test/render_test
+firmware/test/timing
+firmware/test/mock/sketch_check
+firmware/test/mock/wokwi_check
+firmware/test/mock/motion_test
+docs/manual/raw/
+docs/manual/pages/
+*.ppm
+.DS_Store
