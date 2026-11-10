@@ -65,6 +65,9 @@ MODEL=piper-sample-generator/models/en_US-libritts_r-medium.pt
 if [ ! -s "$MODEL" ]; then
   wget -O "$MODEL" "https://github.com/rhasspy/piper-sample-generator/releases/download/v2.0.0/en_US-libritts_r-medium.pt"
 fi
+# The voice model is a full PyTorch pickle, and PyTorch 2.6+ refuses to load those unless told it is trusted.
+# It is: it comes from the official piper-sample-generator release.
+sed -i 's/torch.load(model_path)/torch.load(model_path, weights_only=False)/' piper-sample-generator/generate_samples.py
 
 step "6/6  Notebook and start script"
 cp "$HERE/train_hey_dewy.ipynb" "$WORK/train_hey_dewy.ipynb"
