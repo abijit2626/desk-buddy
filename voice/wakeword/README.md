@@ -95,3 +95,20 @@ The voice generator is pinned to piper-sample-generator `v2.0.0`, because newer 
 The notebook is adapted from microWakeWord's `basic_training_notebook.ipynb` by Kevin Ahrendt (Apache 2.0).
 Voices come from [Piper sample generator](https://github.com/rhasspy/piper-sample-generator). The background
 sound datasets it downloads have mixed licences, so the trained model is for personal, non-commercial use.
+
+
+## Testing with your own voice
+
+The model was tested on synthetic voices. `test_real_voice.py` runs the same steps as the firmware on real
+recordings and tells you how often it hears you and how often it triggers by mistake, at several cutoffs.
+
+```sh
+sudo apt install ffmpeg                       # reads phone recordings (m4a, mp3, ...)
+source ~/dewy-wakeword/venv/bin/activate      # or: pip install numpy pymicro-features ai-edge-litert
+mkdir -p ~/real-test/yes ~/real-test/no
+# put ~20 clips of you saying "Hey Dewy" in yes/, and other sound (talking, "hey siri", a song, a quiet room, a few minutes in total) in no/
+python test_real_voice.py ~/real-test/yes ~/real-test/no
+```
+
+Sanity check of the script itself: run it with the synthetic clips from training as the `yes` folder
+(`~/dewy-wakeword/generated_samples` or similar). Most should be heard. If they are not, the script is wrong, not the model.
