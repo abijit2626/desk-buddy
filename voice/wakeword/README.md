@@ -78,6 +78,27 @@ worse): at cutoff 0.98 it hears about 82% of "Hey Dewy" with one false wake-up p
 at 0.97, 84% and one per 53 minutes. It was trained without the extra AudioSet noise (that download failed, see
 the notebook), so a second round with it should help. The real test is with the mic on Dewy.
 
+## Round 2: train with real voices
+
+The first model only ever heard computer voices, and `test_real_voice.py` showed it: on real voice notes at the
+default cutoff it heard 1 of 10 (about 82% on the computer test voices). Round 2 adds real recordings.
+
+1. Record with a normal voice recorder (not WhatsApp: it squashes the sound). Any format works.
+   - `yes`: 60 to 100 clips of you, and 20 to 30 of the person who will use Dewy, each saying "Hey Dewy" once.
+     Vary the tone (normal, quiet, a question, a command), the distance (close, across the room) and the background
+     (quiet, a fan, music or TV on low). A second of quiet before and after is fine, it is trimmed automatically.
+   - `no`: 10 minutes or more of everything else in the same rooms: talking, near-misses ("hey siri", "hey buddy",
+     "hey dude", "dewey", "do we"), a song, a quiet room.
+2. Put them in `~/dewy-wakeword/real_recordings/yes` and `.../no`. **Keep some clips back** (say 10 of each) in
+   `~/real-test/` for `test_real_voice.py`: a clip used for training can't test it.
+3. In the notebook, run the cells again from "Download room echoes" (this time the AudioSet background noise
+   downloads properly) through to the end. Round 1's model is kept in `trained_models/hey_dewy_round1`.
+   Training takes about as long as before (2 to 3 hours on an RTX 4060).
+4. Test with `test_real_voice.py`, then pick the cutoff from its table.
+
+A third round, with recordings made by Dewy's own mic, comes once the hardware is here: the mic changes the sound
+more than anything else.
+
 ## Next: on Dewy
 
 The firmware side still has to be written, and gets built once the mic arrives. The ESP32 will:
