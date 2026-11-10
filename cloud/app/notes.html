@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Send Dewy a note</title>
+<meta name="description" content="Send a note that pops up on Dewy's screen.">
+<meta name="theme-color" content="#FFF6F9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#150D11" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Dewy notes">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="app.css">
+<script type="module" src="notes.js"></script>
+</head>
+<body>
+<main class="wrap">
+  <div class="hero">
+    <img src="icons/icon-192.png" alt="">
+    <h1 id="title">Send Dewy a note</h1>
+    <span class="status" id="status"><i></i><span id="statusText">Checking...</span></span>
+  </div>
+
+  <div class="card" id="noLink" hidden>
+    <h2>This page needs a notes link</h2>
+    <p class="muted">Ask whoever looks after Dewy to make you a notes link in Dewy's app (More, then Notes links), and open that link.</p>
+  </div>
+
+  <form class="card" id="noteForm" hidden>
+    <label class="field" for="noteText">Your note shows up on Dewy's screen with your name on it</label>
+    <textarea id="noteText" maxlength="120" placeholder="Good luck today!"></textarea>
+    <div class="row between"><span class="small muted" id="noteCount">0 / 120</span><button class="primary" type="submit" id="noteSend">Send</button></div>
+  </form>
+
+  <div class="card" id="sentCard" hidden>
+    <h3>Your notes</h3>
+    <div class="list" id="noteList"><p class="empty">Nothing sent yet.</p></div>
+  </div>
+  <p class="small muted" id="tip" hidden>Tip: bookmark this page or add it to your home screen to send notes quickly. Keep the link to yourself: anyone with it can send notes.</p>
+</main>
+</body>
+</html>

@@ -1,0 +1,3 @@
+# Local-only keys for "npm run dev". Copy to .dev.vars. Never use these on the real server.
+REGISTER_KEY="local-register-key-for-testing-only"
+ADMIN_KEY="local-admin-key-for-testing-only-1234"

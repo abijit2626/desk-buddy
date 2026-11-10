@@ -1,1 +1,200 @@
-<!doctype html><title>Dewy</title><p>placeholder
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dewy</title>
+<meta name="description" content="Dewy's phone app: study timer, notes, alarms, reminders and settings.">
+<meta name="theme-color" content="#FFF6F9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#150D11" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Dewy">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="app.css">
+<script type="module" src="app.js"></script>
+</head>
+<body>
+
+<!-- ======================= pairing ======================= -->
+<main id="pair" class="wrap" hidden>
+  <div class="hero">
+    <img src="icons/icon-192.png" alt="">
+    <h1>Hi, I'm Dewy</h1>
+    <p class="muted">Let's connect your phone.</p>
+  </div>
+
+  <div class="card install" id="installTip" hidden>
+    <h3>First, add me to your home screen</h3>
+    <ol>
+      <li>Tap <b>Share</b> <svg class="share-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M8 7l4-4 4 4M5 11v9h14v-9"/></svg> at the bottom of Safari.</li>
+      <li>Tap <b>Add to Home Screen</b>, then <b>Add</b>.</li>
+      <li>Open <b>Dewy</b> from your home screen and pair there.</li>
+    </ol>
+    <p class="small muted">The home-screen app keeps its own sign-in, so pairing here in Safari won't carry over.</p>
+  </div>
+
+  <form class="card" id="pairForm" autocomplete="off">
+    <h2>Pair with Dewy</h2>
+    <p class="muted">Dewy shows an 8-character code on its screen. Type it here.</p>
+    <label class="field">Code from Dewy's screen
+      <input class="code" id="pairCode" type="text" inputmode="text" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="9" placeholder="ABCD 2345" required>
+    </label>
+    <label class="field">Name this phone
+      <input id="pairLabel" type="text" maxlength="24" value="My iPhone">
+    </label>
+    <button class="primary" type="submit" id="pairBtn">Pair</button>
+    <p class="small muted">No code on Dewy's screen? It appears once Dewy is on Wi-Fi. Someone who's already paired can also make one under More, then Add another phone.</p>
+  </form>
+</main>
+
+<!-- ======================= the app ======================= -->
+<main id="app" class="wrap" hidden>
+  <header class="top">
+    <h1 id="dewyName">Dewy</h1>
+    <span class="status" id="status"><i></i><span id="statusText">Checking...</span></span>
+  </header>
+
+  <!-- home -->
+  <section id="tab-home" class="stack" aria-label="Home">
+    <div class="card">
+      <div class="row between"><h2>Study timer</h2><span class="badge" id="timerBadge" hidden>Running</span></div>
+      <div class="row between" id="timerIdle">
+        <div class="stepper">
+          <button class="icon ghost" type="button" id="minLess" aria-label="5 minutes less">&minus;</button>
+          <output id="minOut" aria-live="polite">25 min</output>
+          <button class="icon ghost" type="button" id="minMore" aria-label="5 minutes more">+</button>
+        </div>
+        <button class="primary" type="button" id="timerStart">Start</button>
+      </div>
+      <div class="row between" id="timerRun" hidden>
+        <div class="big-time" id="timerLeft" aria-live="off">25:00</div>
+        <button class="danger" type="button" id="timerStop">Stop</button>
+      </div>
+      <p class="small muted">Dewy shows a progress bar, looks down like it's studying with you, and won't nap until it's done.</p>
+    </div>
+
+    <form class="card" id="noteForm">
+      <h2>Send a note</h2>
+      <label class="field" for="noteText">Shows up on Dewy's screen</label>
+      <textarea id="noteText" maxlength="120" placeholder="Good luck today!"></textarea>
+      <div class="row between"><span class="small muted" id="noteCount">0 / 120</span><button class="primary" type="submit" id="noteSend">Send to Dewy</button></div>
+    </form>
+
+    <div class="card">
+      <h3>Recent notes</h3>
+      <div class="list" id="noteList"><p class="empty">No notes yet.</p></div>
+    </div>
+  </section>
+
+  <!-- alarms -->
+  <section id="tab-alarms" class="stack" aria-label="Alarms" hidden>
+    <div class="card">
+      <div class="row between"><h2>Alarms</h2><button class="ghost" type="button" id="addAlarm">Add</button></div>
+      <div class="list" id="alarmList"></div>
+      <p class="small muted">Tap Dewy, shake it or pick it up to snooze. Alarms don't ring while Dewy lies on its face.</p>
+    </div>
+    <form class="card" id="alarmEditor" hidden>
+      <h2 id="alarmEditorTitle">New alarm</h2>
+      <label class="field">Time <input type="time" id="alarmTime" value="07:00" required></label>
+      <div class="stack">
+        <span class="small muted"><b>Repeat</b> (none picked = every day)</span>
+        <div class="days" id="alarmDays"></div>
+      </div>
+      <label class="field">Label <input type="text" id="alarmLabel" maxlength="24" placeholder="College"></label>
+      <div class="row between">
+        <button class="danger" type="button" id="alarmDelete">Delete</button>
+        <div class="row"><button class="ghost" type="button" id="alarmCancel">Cancel</button><button class="primary" type="submit">Done</button></div>
+      </div>
+    </form>
+  </section>
+
+  <!-- reminders -->
+  <section id="tab-reminders" class="stack" aria-label="Reminders" hidden>
+    <div class="card">
+      <h2>Reminders</h2>
+      <label class="field">Sip some water <select id="remWater"></select></label>
+      <label class="field">Stretch break <select id="remStretch"></select></label>
+      <div class="row">
+        <label class="field grow">From <select id="remFrom"></select></label>
+        <label class="field grow">Until <select id="remTo"></select></label>
+      </div>
+      <p class="small muted">Dewy only reminds you between these hours, and never while it's napping or lying on its face.</p>
+    </div>
+    <div class="card">
+      <h2>Study timer length</h2>
+      <label class="field">Each focus session <select id="studyLen"></select></label>
+    </div>
+  </section>
+
+  <!-- more -->
+  <section id="tab-more" class="stack" aria-label="More" hidden>
+    <div class="card">
+      <h2>Dewy</h2>
+      <label class="field">Name <input type="text" id="setName" maxlength="20"></label>
+      <div class="stack">
+        <span class="small muted"><b>City for the weather</b></span>
+        <p id="cityNow">Not set</p>
+        <form class="row" id="cityForm"><input type="search" id="cityQuery" placeholder="Search a city" aria-label="Search a city" class="grow"><button class="ghost" type="submit">Search</button></form>
+        <div class="results" id="cityResults"></div>
+      </div>
+      <label class="field">Time zone <select id="setTz"></select></label>
+    </div>
+
+    <div class="card">
+      <h2>Special days</h2>
+      <div class="row">
+        <label class="field grow">Birthday month <select id="bdMonth"></select></label>
+        <label class="field grow">Day <select id="bdDay"></select></label>
+      </div>
+      <label class="field">Dewy's own birthday (the day it became yours) <input type="date" id="giftDate"></label>
+      <p class="small muted">On these days Dewy puts on a party hat the first time it's awake after 8 am.</p>
+    </div>
+
+    <div class="card">
+      <h2>Notes links</h2>
+      <p class="muted">A link that can only send notes to Dewy, nothing else. You can remove it any time.</p>
+      <form class="row" id="linkForm"><input type="text" id="linkName" maxlength="20" value="Abijit" aria-label="Name shown on the notes" class="grow"><button class="ghost" type="submit">Make link</button></form>
+      <div class="stack" id="linkMade" hidden>
+        <p class="small"><b>Here's the link.</b> Save or share it now; it's only shown once.</p>
+        <p class="link-out" id="linkUrl"></p>
+        <div class="row"><button class="ghost" type="button" id="linkCopy">Copy</button><button class="ghost" type="button" id="linkShare">Share</button></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Phones and links</h2>
+      <div class="list" id="accessList"><p class="empty">Loading...</p></div>
+      <button class="ghost" type="button" id="inviteBtn">Add another phone</button>
+      <div class="stack" id="inviteOut" hidden>
+        <p class="small muted">On the other phone, open Dewy and type this code. It works for 10 minutes.</p>
+        <p class="big-time" id="inviteCode"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>About</h2>
+      <p class="small muted" id="aboutText"></p>
+      <button class="danger" type="button" id="forgetBtn">Forget this phone</button>
+    </div>
+  </section>
+</main>
+
+<div class="savebar" id="savebar" hidden>
+  <div class="in"><p>Unsaved changes</p><button type="button" id="undoBtn">Undo</button><button class="primary" type="button" id="saveBtn">Save</button></div>
+</div>
+
+<nav class="tabs" id="tabs" aria-label="Sections" hidden>
+  <div class="in">
+    <button type="button" data-tab="home" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="4"/><circle cx="9" cy="12.5" r="2"/><circle cx="15" cy="12.5" r="2"/></svg>Home</button>
+    <button type="button" data-tab="alarms"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="7"/><path d="M12 9.5V13l2.5 1.5M5 4 2.5 6.5M19 4l2.5 2.5"/></svg>Alarms</button>
+    <button type="button" data-tab="reminders"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c3.5 4.2 6 7.4 6 10.5a6 6 0 0 1-12 0C6 10.4 8.5 7.2 12 3z"/></svg>Reminders</button>
+    <button type="button" data-tab="more"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>More</button>
+  </div>
+</nav>
+
+</body>
+</html>
