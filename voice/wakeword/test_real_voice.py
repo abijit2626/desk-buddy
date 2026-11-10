@@ -100,6 +100,9 @@ def main():
     ap.add_argument("--model", default=str(HERE / "model" / "stream_state_internal_quant.tflite"))
     ap.add_argument("--cutoff", type=float, default=cfg["probability_cutoff"])
     ap.add_argument("--window", type=int, default=cfg["sliding_window_size"])
+    ap.add_argument("--pad", type=float, default=1.0,
+                    help="seconds of silence added before each clip (and half that after), as on the device the "
+                         "word arrives in the middle of a stream; clips cut tight around the word score badly without it")
     a = ap.parse_args()
 
     results = {"yes": [], "no": []}
@@ -109,6 +112,7 @@ def main():
             x = load_audio(f)
             if len(x) < 8000:
                 continue
+            x = np.concatenate([np.zeros(int(16000 * a.pad), np.int16), x, np.zeros(int(8000 * a.pad), np.int16)])
             avg = averaged(run_model(a.model, features(x)), a.window)
             peak = float(avg.max()) if len(avg) else 0.0
             seconds = len(x) / 16000
