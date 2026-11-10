@@ -68,20 +68,29 @@ fi
 
 step "6/6  Notebook and start script"
 cp "$HERE/train_hey_dewy.ipynb" "$WORK/train_hey_dewy.ipynb"
+# TensorFlow loads some NVIDIA libraries only while running and doesn't find the ones pip installed,
+# so point it at them (and at WSL's own GPU driver library).
+cat > "$WORK/gpu_env.sh" <<'EOF'
+_here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_nv="$("$_here/venv/bin/python" -c "import glob,site; print(':'.join(glob.glob(site.getsitepackages()[0]+'/nvidia/*/lib')))")"
+export LD_LIBRARY_PATH="$_nv:/usr/lib/wsl/lib:${LD_LIBRARY_PATH:-}"
+EOF
 cat > "$WORK/start.sh" <<EOF
 #!/usr/bin/env bash
 # Opens the training notebook. Run:  bash ~/dewy-wakeword/start.sh   then open the link it prints in your browser.
 cd "$WORK"
 source venv/bin/activate
+source "$WORK/gpu_env.sh"
 export DEWY_PIPER_PYTHON="$WORK/venv-piper/bin/python"
 exec jupyter lab --no-browser --ServerApp.root_dir="$WORK"
 EOF
 chmod +x "$WORK/start.sh"
 
 step "Does Python see the GPU?"
-venv/bin/python - <<'EOF' 2>/dev/null || true
+source "$WORK/gpu_env.sh"
+venv/bin/python - <<'EOF' || true
 import os
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 import tensorflow as tf
 print("TensorFlow GPUs:", tf.config.list_physical_devices("GPU"))
 EOF
