@@ -11,7 +11,7 @@ html_handling = "auto-trailing-slash"
 [[d1_databases]]
 binding = "DB"
 database_name = "dewy"
-database_id = "REPLACE_WITH_YOUR_D1_ID"   # printed by: npx wrangler d1 create dewy
+database_id = "d186ee54-a824-4898-9546-83ad53aa5cea"   # from: npx wrangler d1 create dewy (an ID, not a secret)
 migrations_dir = "migrations"
 
 # Workers AI: turns Dewy's voice into words and the answer back into speech (free allowance, then pay-as-you-go)
