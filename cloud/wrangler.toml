@@ -14,8 +14,16 @@ database_name = "dewy"
 database_id = "REPLACE_WITH_YOUR_D1_ID"   # printed by: npx wrangler d1 create dewy
 migrations_dir = "migrations"
 
+# Workers AI: turns Dewy's voice into words and the answer back into speech (free allowance, then pay-as-you-go)
+[ai]
+binding = "AI"
+
 [vars]
 NOTES_PER_DAY = "30"
+CHATS_PER_DAY = "40"            # questions per Dewy per day
+CHAT_TOKENS_PER_DAY = "60000"   # Claude tokens per Dewy per day
+TTS_CHARS_PER_DAY = "6000"      # spoken characters per Dewy per day (the main cost)
+CHAT_MODEL = "claude-haiku-5-5"
 
 # nightly tidy-up of old notes and counters
 [triggers]

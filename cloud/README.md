@@ -1,14 +1,15 @@
 # Dewy cloud
 
-A small Cloudflare Worker that does three jobs:
+A small Cloudflare Worker that does four jobs:
 
 - **Hosts the phone app** (`app/`): a home-screen web app for iPhone with the study timer, notes, alarms,
   reminders and settings, plus a send-only notes page (`/notes`).
 - **Keeps Dewy in sync**: settings are stored in a D1 database; notes and timer commands wait in a queue
   until Dewy checks in (every few seconds over HTTPS).
 - **Offers firmware updates**, so Dewy can update itself from anywhere.
+- **Answers Dewy's spoken questions** ("Hey Dewy, what's the news?"), see [Voice chat](#voice-chat).
 
-Everything fits in Cloudflare's free plan.
+The first three fit in Cloudflare's free plan. Voice chat costs a little (see below).
 
 ## How the pieces talk
 
@@ -40,10 +41,16 @@ your phone (notes link) ----^   |
    npx wrangler secret put ADMIN_KEY
    ```
    A quick way to make one: `node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"`
-5. Deploy: `npm run deploy`. It prints the address, like `https://dewy.<you>.workers.dev`.
-6. In `firmware/dewy/secrets.h`, set `DEWY_SERVER` to that address and `DEWY_REGISTER_KEY` to the same
+5. For voice chat, make an API key at [console.anthropic.com](https://console.anthropic.com), set a monthly spend
+   limit there first (Settings, Limits), then store the key:
+   ```sh
+   npx wrangler secret put ANTHROPIC_API_KEY
+   ```
+   Without it everything else still works; only chat answers "chat isn't set up" (503).
+6. Deploy: `npm run deploy`. It prints the address, like `https://dewy.<you>.workers.dev`.
+7. In `firmware/dewy/secrets.h`, set `DEWY_SERVER` to that address and `DEWY_REGISTER_KEY` to the same
    register key. Upload the firmware.
-7. On her iPhone: open the address in Safari, tap Share, then **Add to Home Screen**. Open Dewy from the home
+8. On her iPhone: open the address in Safari, tap Share, then **Add to Home Screen**. Open Dewy from the home
    screen and type the code Dewy shows.
 
 ## Working on it locally
@@ -52,9 +59,34 @@ your phone (notes link) ----^   |
 cp .dev.vars.example .dev.vars     # local-only keys
 npm run db:local                   # local database
 npm run dev                        # http://127.0.0.1:8787
-npm test                           # 40 end-to-end API checks (with dev running)
+npm test                           # 69 end-to-end API checks (with dev running)
 npm run check                      # TypeScript
 ```
+
+`npm run dev` uses `wrangler.dev.toml`, which is `wrangler.toml` without the `[ai]` line (Workers AI only exists
+online and would ask for a Cloudflare login). `.dev.vars` sets `CHAT_FAKE_AI="1"`, so voice chat runs on scripted
+stand-ins: no account, no key, no cost. Keep the two toml files in step when you change one.
+
+## Voice chat
+
+```
+Dewy mic --16 kHz audio--> /api/device/chat --> Whisper (words) --> Claude Haiku (+ tools) --> Aura (voice) --WAV--> Dewy speaker
+```
+
+- **Request**: `POST /api/device/chat` with Dewy's token. Body is raw 16 kHz, 16-bit, mono audio
+  (`audio/pcm`, 0.4 to 12 seconds), or `{"text": "..."}` as JSON for typing and tests.
+- **Answer**: a WAV file. `x-dewy-heard` and `x-dewy-reply` headers (URL-encoded) carry the words. If the day's
+  speaking budget is used up, or the voice service fails, the answer is JSON `{heard, reply, audio:false}` instead.
+  The WAV's length field may be unreliable: read the header, then play until the data ends.
+- **Tools Claude can use**: weather (Open-Meteo, for the city in settings), news (BBC and The Hindu feeds), the
+  notes people sent, and the study timer. The date and time come from the timezone in settings.
+- **Memory**: the last 6 messages from the past 5 minutes, so "and tomorrow?" works. Transcripts are deleted after
+  an hour and are never written to logs.
+- **Limits per Dewy per day** (change in `wrangler.toml`): 40 questions, 60,000 Claude tokens, 6,000 spoken
+  characters. A friendly 429 message comes back when a limit is reached.
+- **Cost**: the spoken characters are most of it (Aura is about $0.015 per 1,000 characters), so a full 6,000
+  characters a day is under $0.10. Claude Haiku answers cost a fraction of a cent each. Speech to text uses Workers AI.
+  Prices change: check the Cloudflare and Anthropic pricing pages.
 
 ## Publishing a firmware update
 
@@ -70,6 +102,7 @@ npm run check                      # TypeScript
 | POST | `/api/device/register` | Dewy (register key) | First start: get a device token |
 | POST | `/api/device/pair` | Dewy | Get a pairing code to show on screen |
 | GET | `/api/device/sync?rev=&ack=` | Dewy | Settings (if changed), queued events, firmware offer |
+| POST | `/api/device/chat` | Dewy | Spoken question in, spoken answer (WAV) out |
 | POST | `/api/pair` | anyone with a code | Pair a phone |
 | GET | `/api/me` | phone or link | Who am I, is Dewy online |
 | GET/PUT | `/api/settings` | phone | Read or save settings |

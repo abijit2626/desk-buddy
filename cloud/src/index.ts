@@ -2,11 +2,14 @@
 // - Serves the phone app (the files in ../app).
 // - Keeps Dewy's settings, alarms and reminders, and queues notes and study-timer commands.
 // - Dewy checks in every few seconds over HTTPS and picks up whatever changed.
+// - Answers Dewy's spoken questions (chat.ts).
 // - Offers new firmware so Dewy can update itself from anywhere.
 
 import { DEFAULT_SETTINGS, Settings, validateSettings, cleanText } from "./settings";
+import { ChatEnv, handleChat } from "./chat";
+import { HttpError, now, bumpUsage, queueEvent } from "./util";
 
-export interface Env {
+export interface Env extends ChatEnv {
   DB: D1Database;
   ASSETS: Fetcher;
   REGISTER_KEY?: string;   // secret: Dewy sends it to register, so strangers can't create devices
@@ -27,12 +30,6 @@ const ONLINE_SECONDS = 120;
 const MAX_BODY = 8192;
 
 // ---------------------------------------------------------------- small helpers
-class HttpError extends Error {
-  constructor(public status: number, message: string) { super(message); }
-}
-const now = () => Math.floor(Date.now() / 1000);
-const today = () => new Date().toISOString().slice(0, 10);
-
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -90,14 +87,6 @@ function newer(a: string, b: string | null): boolean {
   return false;
 }
 
-async function bumpUsage(env: Env, deviceId: string, kind: string): Promise<number> {
-  const row = await env.DB.prepare(
-    "INSERT INTO usage (device_id, day, kind, count) VALUES (?1, ?2, ?3, 1) " +
-    "ON CONFLICT(device_id, day, kind) DO UPDATE SET count = count + 1 RETURNING count"
-  ).bind(deviceId, today(), kind).first<{ count: number }>();
-  return row?.count ?? 1;
-}
-
 // ---------------------------------------------------------------- who is calling
 async function deviceAuth(req: Request, env: Env): Promise<DeviceRow> {
   const hash = await sha256hex(bearer(req));
@@ -134,12 +123,6 @@ async function newPairCode(env: Env, deviceId: string): Promise<string> {
   }
   throw new HttpError(503, "try again");
 }
-async function queueEvent(env: Env, deviceId: string, kind: string, body: Record<string, unknown>): Promise<number> {
-  const r = await env.DB.prepare("INSERT INTO events (device_id, kind, body, created_at) VALUES (?1, ?2, ?3, ?4) RETURNING id")
-    .bind(deviceId, kind, JSON.stringify(body), now()).first<{ id: number }>();
-  return r!.id;
-}
-
 // ---------------------------------------------------------------- Dewy's own calls
 async function deviceRegister(req: Request, env: Env): Promise<Response> {
   if (!env.REGISTER_KEY) throw new HttpError(503, "server not set up: REGISTER_KEY is missing");
@@ -186,6 +169,12 @@ async function deviceSync(req: Request, env: Env, url: URL): Promise<Response> {
   if (d.pair_code && (d.pair_expires ?? 0) > t) out.pairCode = d.pair_code;
   if (firmware && newer(firmware.version, fw)) out.firmware = firmware;
   return json(out);
+}
+
+// Dewy asks a question out loud (or sends text): it gets the spoken answer back. See chat.ts.
+async function deviceChat(req: Request, env: Env): Promise<Response> {
+  const d = await deviceAuth(req, env);
+  return handleChat(req, env, d);
 }
 
 // ---------------------------------------------------------------- the phone app's calls
@@ -320,6 +309,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (p === "/api/device/register" && m === "POST") return deviceRegister(req, env);
   if (p === "/api/device/pair" && m === "POST") return devicePair(req, env);
   if (p === "/api/device/sync" && m === "GET") return deviceSync(req, env, url);
+  if (p === "/api/device/chat" && m === "POST") return deviceChat(req, env);
 
   if (p === "/api/pair" && m === "POST") return appPair(req, env);
   if (p === "/api/me" && m === "GET") return appMe(req, env);
@@ -356,6 +346,7 @@ export default {
     await env.DB.batch([
       env.DB.prepare("DELETE FROM events WHERE delivered_at IS NOT NULL AND delivered_at < ?1").bind(t - 30 * 86400),
       env.DB.prepare("DELETE FROM events WHERE delivered_at IS NULL AND created_at < ?1").bind(t - 60 * 86400),
+      env.DB.prepare("DELETE FROM chat_turns WHERE created_at < ?1").bind(t - 86400),
       env.DB.prepare("DELETE FROM usage WHERE day < ?1").bind(new Date((t - 60 * 86400) * 1000).toISOString().slice(0, 10)),
       env.DB.prepare("UPDATE devices SET pair_code = NULL, pair_expires = NULL WHERE pair_expires < ?1").bind(t),
     ]);
