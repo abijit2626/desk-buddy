@@ -94,10 +94,25 @@ static volatile bool cloudReady = false;     // registered with the server
 
 static bool cloudOn() { return strlen(DEWY_SERVER) > 8; }
 
-// ---------------------------------------------------------------- HTTPS helper (network task only)
+// ---------------------------------------------------------------- one HTTPS conversation at a time
+// Each TLS connection needs about 45 KB of internal RAM. The network task (sync, weather, updates) and the voice task
+// both talk HTTPS, so they take turns: whoever holds the lock is the only one with a connection open.
+static SemaphoreHandle_t tlsLock = nullptr;
+struct TlsGuard {
+  bool ok;
+  explicit TlsGuard(uint32_t waitMs = 0xFFFFFFFFu) {
+    ok = !tlsLock || xSemaphoreTake(tlsLock, waitMs == 0xFFFFFFFFu ? portMAX_DELAY : pdMS_TO_TICKS(waitMs)) == pdTRUE;
+  }
+  ~TlsGuard() { if (ok && tlsLock) xSemaphoreGive(tlsLock); }
+  TlsGuard(const TlsGuard&) = delete;
+  TlsGuard& operator=(const TlsGuard&) = delete;
+};
+
+// ---------------------------------------------------------------- HTTPS helper
 static char deviceToken[64] = "";
 
 static int httpsJson(const char* method, const String& url, const char* body, JsonDocument* out, bool sendToken = true, const char* regKey = nullptr) {
+  TlsGuard tls;
   WiFiClientSecure client;
   client.setCACert(CA_BUNDLE);
   client.setTimeout(15);
@@ -204,6 +219,7 @@ static int parseWeather(const char* s) {
   return face::WEATHER_CLOUD;
 }
 static bool fetchWeather() {
+  TlsGuard tls;
   WiFiClientSecure client;
   client.setCACert(CA_BUNDLE);
   HTTPClient http;
@@ -294,7 +310,10 @@ static void netTask(void*) {
         }
         bool offer;
         { NetLock lock; offer = inbox.fwOffer; }
-        if (offer && updateAllowed) installFirmware();
+        if (offer && updateAllowed) {
+          TlsGuard tls;                                   // wait for a voice turn that is talking to the server
+          if (updateAllowed) installFirmware();           // and look again: it may have started a conversation meanwhile
+        }
       }
       if (cityOn && int32_t(now - nextWeather) >= 0) nextWeather = millis() + (fetchWeather() ? 30UL : 1UL) * 60UL * 1000UL;
     }
@@ -304,6 +323,7 @@ static void netTask(void*) {
 
 static void startNetTask() {
   netLock = xSemaphoreCreateMutex();
+  tlsLock = xSemaphoreCreateMutex();
   memset(&inbox, 0, sizeof inbox);
   inbox.weather = -1;
   xTaskCreatePinnedToCore(netTask, "net", 12288, nullptr, 1, nullptr, 0);
