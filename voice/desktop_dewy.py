@@ -174,7 +174,7 @@ def record_question(audio: Audio, noise: float):
 
 # ---------------------------------------------------------------- the server
 def http(url, data, headers, timeout=45):
-    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+    req = urllib.request.Request(url, data=data, headers={"user-agent": "dewy-desktop/1.0", **headers}, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.status, dict(r.headers), r.read()
