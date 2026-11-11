@@ -1,0 +1,26 @@
+# Settings for "npm run dev" and "npm test" on your own computer. It is wrangler.toml without the [ai] binding:
+# Workers AI only exists online and would ask you to log in to Cloudflare. Locally, .dev.vars sets CHAT_FAKE_AI="1",
+# which swaps the voice services for scripted stand-ins. Keep the two files in step when you change one.
+name = "dewy"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+
+[assets]
+directory = "./app"
+binding = "ASSETS"
+html_handling = "auto-trailing-slash"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "dewy"
+database_id = "REPLACE_WITH_YOUR_D1_ID"
+migrations_dir = "migrations"
+
+[vars]
+NOTES_PER_DAY = "30"
+CHATS_PER_DAY = "40"
+CHAT_TOKENS_PER_DAY = "60000"
+TTS_CHARS_PER_DAY = "6000"
+# The thinking step: "workers-ai" runs on Cloudflare's free allowance, no card needed.
+# Set "anthropic" (and store ANTHROPIC_API_KEY as a secret) to use Claude Haiku instead.
+CHAT_PROVIDER = "workers-ai"

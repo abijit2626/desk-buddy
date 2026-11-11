@@ -3,12 +3,12 @@
   "version": "1.0.0",
   "description": "Dewy cloud: Cloudflare Worker and phone app",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev -c wrangler.dev.toml",
     "check": "tsc",
     "deploy": "wrangler deploy",
-    "db:local": "wrangler d1 migrations apply dewy --local",
+    "db:local": "wrangler d1 migrations apply dewy --local -c wrangler.dev.toml",
     "db:remote": "wrangler d1 migrations apply dewy --remote",
-    "test": "node test/smoke.mjs"
+    "test": "node test/smoke.mjs && node test/chat.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261110.1",

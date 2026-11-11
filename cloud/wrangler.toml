@@ -11,11 +11,21 @@ html_handling = "auto-trailing-slash"
 [[d1_databases]]
 binding = "DB"
 database_name = "dewy"
-database_id = "REPLACE_WITH_YOUR_D1_ID"   # printed by: npx wrangler d1 create dewy
+database_id = "d186ee54-a824-4898-9546-83ad53aa5cea"   # from: npx wrangler d1 create dewy (an ID, not a secret)
 migrations_dir = "migrations"
+
+# Workers AI: turns Dewy's voice into words and the answer back into speech (free allowance, then pay-as-you-go)
+[ai]
+binding = "AI"
 
 [vars]
 NOTES_PER_DAY = "30"
+CHATS_PER_DAY = "40"            # questions per Dewy per day
+CHAT_TOKENS_PER_DAY = "60000"   # Claude tokens per Dewy per day
+TTS_CHARS_PER_DAY = "6000"      # spoken characters per Dewy per day (the main cost)
+# The thinking step: "workers-ai" runs on Cloudflare's free allowance, no card needed.
+# Set "anthropic" (and store ANTHROPIC_API_KEY as a secret) to use Claude Haiku instead.
+CHAT_PROVIDER = "workers-ai"
 
 # nightly tidy-up of old notes and counters
 [triggers]

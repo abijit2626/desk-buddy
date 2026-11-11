@@ -1,3 +1,7 @@
 # Local-only keys for "npm run dev". Copy to .dev.vars. Never use these on the real server.
 REGISTER_KEY="local-register-key-for-testing-only"
 ADMIN_KEY="local-admin-key-for-testing-only-1234"
+# Voice chat in "npm run dev" and "npm test" uses scripted stand-ins, so no AI account or key is needed.
+# Use "binding" instead of "1" to run the real Cloudflare chat code against a pretend AI binding.
+CHAT_FAKE_AI="1"
+TTS_CHARS_PER_DAY="2000"
