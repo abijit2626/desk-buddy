@@ -32,6 +32,8 @@ const MAX_AUDIO_BYTES = SAMPLE_RATE * 2 * 12;         // 12 s
 const SILENCE_RMS = 60;                               // quieter than this (16-bit scale) is treated as nobody speaking
 const MAX_HEARD = 300;                                // longest text question
 const MAX_REPLY_CHARS = 320;
+const DIDNT_CATCH = "Sorry, I didn't catch that. Could you say it again?";
+const COMMON_HEADERS = { "cache-control": "no-store", "x-content-type-options": "nosniff" };
 const HISTORY_SECONDS = 300;
 const HISTORY_TURNS = 6;
 const MAX_ROUNDS = 4;                                 // tool calls per question
@@ -270,6 +272,13 @@ function pcmToWav(pcm: Uint8Array, rate = SAMPLE_RATE): Uint8Array {
   return out;
 }
 
+// Text for a response header: cut by whole characters (an emoji is two UTF-16 units, and cutting between them makes
+// encodeURIComponent throw), any half-emoji removed, then percent-encoded.
+export function headerText(s: string, max: number): string {
+  const cut = Array.from(s).slice(0, max).join("");
+  return encodeURIComponent(cut.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, ""));
+}
+
 function rms16(pcm: Uint8Array): number {
   const n = pcm.length >> 1;
   if (!n) return 0;
@@ -282,8 +291,8 @@ function rms16(pcm: Uint8Array): number {
 // What gets said out loud: no markdown, no links, not too long, cut at the end of a sentence.
 export function speakable(text: string): string {
   let s = text.replace(/https?:\/\/\S+/g, "").replace(/[*_#`~>|]/g, "").replace(/\s+/g, " ").trim();
-  if (s.length > MAX_REPLY_CHARS) {
-    s = s.slice(0, MAX_REPLY_CHARS);
+  if ([...s].length > MAX_REPLY_CHARS) {
+    s = Array.from(s).slice(0, MAX_REPLY_CHARS).join("");   // whole characters, so an emoji is never cut in half
     const end = Math.max(s.lastIndexOf(". "), s.lastIndexOf("! "), s.lastIndexOf("? "), s.search(/[.!?]$/));
     s = end > 100 ? s.slice(0, end + 1) : s.slice(0, s.lastIndexOf(" ")).trim();
   }
@@ -417,6 +426,9 @@ export async function handleChat(req: Request, env: ChatEnv, dev: { id: string; 
     throw new HttpError(415, "send 16 kHz 16-bit mono audio, or JSON with text");
   }
 
+  // Nobody spoke (a bump on the table, a false wake-up): say so in words. No question is counted and no voice is paid for.
+  if (nobody) return textAnswer("", DIDNT_CATCH);
+
   // 2. limits, checked before anything that costs money
   const chatLimit = Number(env.CHATS_PER_DAY || 40);
   if ((await bumpUsage(env, dev.id, "chat")) > chatLimit)
@@ -425,14 +437,11 @@ export async function handleChat(req: Request, env: ChatEnv, dev: { id: string; 
     throw new HttpError(429, "I've talked a lot today. Ask me again tomorrow!");
 
   // 3. words and a short memory
-  if (heard === null) {
-    if (nobody) heard = "";
-    else heard = cleanText(await prov.transcribe(wav!), MAX_HEARD, true) ?? "";
-  }
+  if (heard === null) heard = cleanText(await prov.transcribe(wav!), MAX_HEARD, true) ?? "";
   let reply: string;
   let tokens = 0;
   if (!heard) {
-    reply = "Sorry, I didn't catch that. Could you say it again?";
+    reply = DIDNT_CATCH;
   } else {
     await env.DB.prepare("DELETE FROM chat_turns WHERE device_id = ?1 AND created_at < ?2").bind(dev.id, now() - 3600).run();
     const past = await env.DB.prepare("SELECT role, text FROM chat_turns WHERE device_id = ?1 AND created_at > ?2 ORDER BY id DESC LIMIT ?3")
@@ -484,18 +493,20 @@ export async function handleChat(req: Request, env: ChatEnv, dev: { id: string; 
     } catch (e) { console.error("tts failed", String(e)); }
   }
 
-  const common = { "cache-control": "no-store", "x-content-type-options": "nosniff" };
-  if (!audio) {
-    return new Response(JSON.stringify({ heard, reply, audio: false }), { headers: { ...common, "content-type": "application/json; charset=utf-8" } });
-  }
+  if (!audio) return textAnswer(heard, reply);
   return new Response(audio, {
     headers: {
-      ...common,
+      ...COMMON_HEADERS,
       "content-type": "audio/wav",
-      "x-dewy-heard": encodeURIComponent(heard.slice(0, 200)),
-      "x-dewy-reply": encodeURIComponent(reply),
+      "x-dewy-heard": headerText(heard, 200),
+      "x-dewy-reply": headerText(reply, MAX_REPLY_CHARS),
     },
   });
+}
+
+// The words only (no voice): used when nobody spoke, the day's speaking budget is used up, or the voice service failed.
+function textAnswer(heard: string, reply: string): Response {
+  return new Response(JSON.stringify({ heard, reply, audio: false }), { headers: { ...COMMON_HEADERS, "content-type": "application/json; charset=utf-8" } });
 }
 
 // ---------------------------------------------------------------- stand-ins for tests (only with CHAT_FAKE_AI in .dev.vars)
