@@ -61,6 +61,12 @@ function sameSecret(a: string, b: string): boolean {
   if (x.length !== y.length) return false;
   return crypto.subtle.timingSafeEqual(x, y);
 }
+// The register key is inside every Dewy's firmware. If the admin key were the same text, anyone who reads the firmware
+// could publish firmware to all Dewys. So with equal keys, registering and publishing both refuse to work.
+function keysAreSeparate(env: Env): boolean {
+  return !(env.REGISTER_KEY && env.ADMIN_KEY && sameSecret(env.REGISTER_KEY, env.ADMIN_KEY));
+}
+const SAME_KEYS = "server not set up: REGISTER_KEY and ADMIN_KEY must be different";
 
 async function readJson(req: Request): Promise<Record<string, unknown>> {
   const text = await req.text();
@@ -126,6 +132,7 @@ async function newPairCode(env: Env, deviceId: string): Promise<string> {
 // ---------------------------------------------------------------- Dewy's own calls
 async function deviceRegister(req: Request, env: Env): Promise<Response> {
   if (!env.REGISTER_KEY) throw new HttpError(503, "server not set up: REGISTER_KEY is missing");
+  if (!keysAreSeparate(env)) throw new HttpError(503, SAME_KEYS);
   if (!sameSecret(req.headers.get("x-register-key") || "", env.REGISTER_KEY)) throw new HttpError(403, "wrong register key");
   const body = await readJson(req);
   const fw = typeof body.fw === "string" && /^\d+\.\d+\.\d+$/.test(body.fw) ? body.fw : null;
@@ -287,6 +294,7 @@ async function invite(req: Request, env: Env): Promise<Response> {
 
 // ---------------------------------------------------------------- publishing firmware
 async function publishFirmware(req: Request, env: Env): Promise<Response> {
+  if (!keysAreSeparate(env)) throw new HttpError(503, SAME_KEYS);
   if (!env.ADMIN_KEY || !sameSecret(bearer(req), env.ADMIN_KEY)) throw new HttpError(403, "admin only");
   const b = await readJson(req);
   const version = typeof b.version === "string" && /^\d+\.\d+\.\d+$/.test(b.version) ? b.version : null;
@@ -321,7 +329,11 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (p === "/api/notes" && m === "GET") return listNotes(req, env);
   if (p === "/api/links" && m === "POST") return createLink(req, env, url);
   if (p === "/api/access" && m === "GET") return listAccess(req, env);
-  if (p.startsWith("/api/access/") && m === "DELETE") return removeAccess(req, env, decodeURIComponent(p.slice(12)));
+  if (p.startsWith("/api/access/") && m === "DELETE") {
+    let id: string;
+    try { id = decodeURIComponent(p.slice(12)); } catch { throw new HttpError(400, "that isn't a valid id"); }
+    return removeAccess(req, env, id);
+  }
   if (p === "/api/invite" && m === "POST") return invite(req, env);
   if (p === "/api/admin/firmware" && m === "PUT") return publishFirmware(req, env);
 

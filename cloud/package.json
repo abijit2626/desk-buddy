@@ -8,7 +8,7 @@
     "deploy": "wrangler deploy",
     "db:local": "wrangler d1 migrations apply dewy --local -c wrangler.dev.toml",
     "db:remote": "wrangler d1 migrations apply dewy --remote",
-    "test": "node test/smoke.mjs && node test/chat.mjs"
+    "test": "node test/smoke.mjs && node test/chat.mjs && node test/keys.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261110.1",

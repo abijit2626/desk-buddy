@@ -90,7 +90,12 @@ r = await chat(dev, paddedAudio("what is the weather like"), "audio/pcm");
 check("audio question is transcribed and answered", r.status === 200 && r.spoken && r.heard === "what is the weather like", r);
 check("the weather tool ran (28 degrees, 60 percent rain)", /28 degrees/.test(r.reply) && /60/.test(r.reply) && /Palakkad/.test(r.reply), r.reply);
 r = await chat(dev, new Uint8Array(16000), "audio/pcm");
-check("a silent recording gets a friendly 'didn't catch that'", r.status === 200 && /didn't catch/i.test(r.reply ?? ""), r);
+check("a silent recording gets a friendly 'didn't catch that', in words only", r.status === 200 && r.spoken === false && r.audio === false && /didn't catch/i.test(r.reply ?? ""), r);
+
+// --- an emoji that straddles the 200th character of what was heard must not break the answer
+r = await ask(dev, "a".repeat(199) + "\u{1F600} ok");
+check("an emoji at character 200 of the question: still answered", r.status === 200 && r.spoken === true, r);
+check("what was heard is cut to 200 whole characters", [...(r.heard ?? "")].length === 200 && r.heard.endsWith("\u{1F600}"), (r.heard ?? "").length);
 
 // --- the tools
 r = await ask(dev, "tell me the news");
@@ -146,6 +151,17 @@ for (let i = 1; i <= 41; i++) {
 }
 check("question number 41 in a day is refused with 429", firstLimited === 41, firstLimited);
 check("the refusal is friendly", /tomorrow/i.test(last.error ?? ""), last);
+
+// --- silence is not a question: it costs nothing, however often it happens
+const quiet = await register();
+let silentOk = true;
+for (let i = 0; i < 45; i++) {
+  const x = await chat(quiet, new Uint8Array(16000), "audio/pcm");
+  if (x.status !== 200 || x.spoken) silentOk = false;
+}
+check("45 silent recordings in a day are all answered in words, none refused", silentOk);
+r = await ask(quiet, "hi there");
+check("and a real question afterwards still works (nothing was used up)", r.status === 200 && r.spoken === true, r);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
