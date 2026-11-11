@@ -222,7 +222,9 @@ function realProviders(env: ChatEnv): Providers {
         return new Uint8Array(await res.arrayBuffer());
       };
       // 16 kHz is what Dewy's speaker code expects; if that rate isn't offered, take the default (the WAV header says which)
-      try { return await run({ sample_rate: SAMPLE_RATE }); } catch (e) { console.error("tts at 16 kHz failed, retrying", String(e)); return await run({}); }
+      let wav: Uint8Array;
+      try { wav = await run({ sample_rate: SAMPLE_RATE }); } catch (e) { console.error("tts at 16 kHz failed, retrying", String(e)); wav = await run({}); }
+      return speedUp(wav, voiceSpeed(env));
     },
 
     fetchText: fetchLimited,
@@ -240,6 +242,21 @@ export function localTimeText(tz: string, nowSec: number): string {
   const date = d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
   const h = d.getUTCHours(), mi = d.getUTCMinutes();
   return `${date}, ${((h + 11) % 12) + 1}:${String(mi).padStart(2, "0")} ${h < 12 ? "am" : "pm"}`;
+}
+
+// Playing the same samples at a higher rate makes Dewy sound higher (and a bit faster). Only the WAV header changes.
+function voiceSpeed(env: unknown): number {
+  const n = Number((env as { VOICE_SPEED?: string }).VOICE_SPEED);
+  return Number.isFinite(n) && n >= 0.8 && n <= 1.5 ? n : 1.15;
+}
+function speedUp(wav: Uint8Array, factor: number): Uint8Array {
+  const tag = (o: number) => String.fromCharCode(wav[o], wav[o + 1], wav[o + 2], wav[o + 3]);
+  if (wav.length < 44 || tag(0) !== "RIFF" || tag(12) !== "fmt ") return wav;
+  const out = wav.slice(), v = new DataView(out.buffer);
+  const rate = Math.round(v.getUint32(24, true) * factor);
+  v.setUint32(24, rate, true);
+  v.setUint32(28, rate * v.getUint16(32, true), true);
+  return out;
 }
 
 function pcmToWav(pcm: Uint8Array, rate = SAMPLE_RATE): Uint8Array {
@@ -358,7 +375,7 @@ function systemPrompt(s: Settings): string {
   return [
     `You are ${s.name}, a small desk buddy: a friendly little robot with an animated face that sits on a desk. You talk out loud through a small speaker, so:`,
     "- Answer in one to three short sentences of plain spoken English. No lists, no markdown, no emoji, no web addresses.",
-    "- Be warm and a little playful, never long-winded. If you don't know something, say so honestly.",
+    "- Your personality: a sweet, cheerful, curious little girl robot. Sound bubbly and affectionate, like a cute best friend. Use simple happy words, a tiny giggle like hehe now and then, and little reactions like oh! or ooh, nice! Never long-winded. If you don't know something, say so honestly and sweetly.",
     `- Right now it is ${localTimeText(s.timezone, now())}. Use that for any question about the date or the time.`,
     "- Use the tools for the weather, the news, notes people sent you, and the study timer. Never make up news or weather.",
     "- For the news, read out two or three headlines plainly, in your own short words. Add nothing that isn't in the headlines: no opinions, no guesses, no extra details.",
