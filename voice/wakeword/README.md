@@ -70,13 +70,21 @@ listening during a long conversation to count false wake-ups.
 
 ## The trained model
 
-The first model is in [`model/`](model/): `stream_state_internal_quant.tflite` (60 KB) and `hey_dewy.json` (its settings).
-`python3 make_model_header.py` turns them into the C header for the firmware.
+The model in [`model/`](model/) is the **round 2** one: `stream_state_internal_quant.tflite` (61 KB) and
+`hey_dewy.json` (its settings). `python3 make_model_header.py` turns them into the C header for the firmware.
 
-Test results of this first model (on the compressed model, with computer-made test voices, so real voices will do
-worse): at cutoff 0.98 it hears about 82% of "Hey Dewy" with one false wake-up per 1.8 hours of dinner-party talk;
-at 0.97, 84% and one per 53 minutes. It was trained without the extra AudioSet noise (that download failed, see
-the notebook), so a second round with it should help. The real test is with the mic on Dewy.
+| | Round 1 (computer voices only) | Round 2 (plus real recordings) |
+|---|---|---|
+| Computer-made test voices | about 82% heard at cutoff 0.98 | harder test set, AUC 0.826 |
+| Real voice clips kept back from training | 1 of 10 heard at 0.98 | 10 of 10 heard at every cutoff |
+| False wake-ups | none seen in the small test | one: "hi abi" with loud background noise |
+
+The false-wake-up rate is only a rough guess (one event in 1.3 minutes of "other" audio), so don't trust the
+per-hour figure. The `cutoff` in `hey_dewy.json` stays at 0.98: with a strict cutoff a missed "Hey Dewy" just
+means saying it twice, while a false wake-up interrupts the desk. Tune it again with the real mic.
+
+The model can only be judged properly on Dewy's own microphone, so round 3 comes with the hardware (see below).
+Round 1's model is in the git history (`wake-word-hey-dewy` branch).
 
 ## Round 2: train with real voices
 
@@ -133,3 +141,7 @@ python test_real_voice.py ~/real-test/yes ~/real-test/no
 
 Sanity check of the script itself: run it with the synthetic clips from training as the `yes` folder
 (`~/dewy-wakeword/generated_samples` or similar). Most should be heard. If they are not, the script is wrong, not the model.
+
+Before round 3, add near-misses to `NEGATIVE_PHRASES` ("hi abi", "hey abi", "hi baby": the names and greetings that
+sound like it) and record about 10 more minutes of "no" audio: names of the people around Dewy, normal talk in the
+languages spoken at home, and TV or music. Keep some back in `~/real-test/no` to test with.

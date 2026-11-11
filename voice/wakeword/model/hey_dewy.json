@@ -4,7 +4,7 @@
   "sliding_window_size": 5,
   "feature_step_size": 10,
   "tensor_arena_size": 30000,
-  "model_bytes": 62200,
+  "model_bytes": 62304,
   "spellings": [
     "hey doo ee",
     "hey dew ee",
