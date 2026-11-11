@@ -470,6 +470,7 @@ static void handleCommand(String raw) {
   else if (cmd == "talk") buddy.talk();
   else if (cmd == "ask") { if (!voiceRequest()) Serial.println("[voice] cannot start: needs Wi-Fi, a server, mic and speaker, and no alarm ringing"); }
   else if (cmd == "mic") { micTest = !micTest; Serial.printf("mic test %s\n", micTest ? "on" : "off"); }
+  else if (wakeCommand(cmd)) {}
   else if (cmd == "pet") { buddy.pet(); addAffection(1); }
   else if (cmd == "poke") buddy.poke();
   else if (cmd == "ignore") { face::Face::Step s[] = { { face::BORED, 5000 }, { face::SLEEPY, 0 } }; buddy.play(s, 2); }

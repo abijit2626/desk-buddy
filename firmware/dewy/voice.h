@@ -1,5 +1,5 @@
-// Dewy voice, stage 2: push-to-talk. Needs Wi-Fi, the cloud server, the INMP441 mic and the MAX98357A speaker.
-//   Double-tap the screen (or type "talk" on serial): Dewy listens, stops when you stop talking,
+// Dewy voice, stages 2 and 3. Needs Wi-Fi, the cloud server, the INMP441 mic and the MAX98357A speaker.
+//   Say "Hey Dewy" (wakeword.h), double-tap the screen, or type "ask" on serial: Dewy listens, stops when you stop talking,
 //   uploads the audio to /api/device/chat, then plays the spoken reply.
 //   Type "mic" on serial to toggle the live loudness bar (the stage 1 mic check).
 // The whole turn runs in its own task, so the face keeps animating.
@@ -9,6 +9,7 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <esp_heap_caps.h>
+#include "wakeword.h"
 
 // ---- pins. Mic: INMP441 (L/R to GND). Speaker: MAX98357A. ----
 #ifndef PIN_MIC_SCK
@@ -274,9 +275,18 @@ static bool talkToCloud(int nSamples) {
   return audio && playLen > 48;
 }
 
+static bool voiceRequest();
+
 static void voiceTask(void*) {
+  int16_t chunk[160];                          // 10 ms of audio
   for (;;) {
-    if (!vRequested) { vTaskDelay(pdMS_TO_TICKS(20)); continue; }
+    if (!vRequested) {
+      if (micTest || !wakeOk || !wakeOn) { vTaskDelay(pdMS_TO_TICKS(20)); continue; }
+      int got = micRead(chunk, 160, 50);       // listen for "Hey Dewy" all the time while idle
+      if (got > 0 && wakeFeed(chunk, got) && !voiceRequest())
+        Serial.println("[wake] heard you, but can't talk now (no Wi-Fi or server, alarm ringing, or face down)");
+      continue;
+    }
     vState = V_LISTEN;
     int n = recordUtterance();
     if (n <= 0) Serial.println("[voice] heard nothing");
@@ -286,6 +296,8 @@ static void voiceTask(void*) {
     }
     vState = V_IDLE;
     vRequested = false;
+    i2s_zero_dma_buffer(MIC_PORT);             // drop audio from while Dewy was talking...
+    wakeReset();                               // ...so it doesn't wake itself up
   }
 }
 
@@ -298,6 +310,7 @@ static void voiceBegin() {
   Serial.printf("[voice] free internal RAM %u, free PSRAM %u\n", (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL), (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
   if (!recBuf || !playBuf) { Serial.println("[voice] no PSRAM: set Tools > PSRAM > OPI PSRAM. Voice is off."); return; }
   if (!micOk || !spkOk) { Serial.println("[voice] mic or speaker setup failed. Voice is off."); return; }
+  if (!wakeBegin()) Serial.println("[wake] wake word is off; double-tap or \"ask\" still work");
   xTaskCreatePinnedToCore(voiceTask, "voice", 20480, nullptr, 1, nullptr, 0);
   vReady = true;
 }
