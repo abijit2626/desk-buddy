@@ -32,6 +32,7 @@
 #include "display.h"
 #include "face.h"
 #include "motion.h"
+#include "types.h"
 
 static LGFX tft;
 static face::Face buddy;
@@ -148,7 +149,6 @@ static void saveAffection(uint32_t now, bool force = false) {
 }
 
 // ---------------- which way up it is (needs "cal up" and "cal face" once) ----------------
-struct Vec3 { float x, y, z; };
 static float dot3(Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 static Vec3 cross3(Vec3 a, Vec3 b) { return { a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x }; }
 static Vec3 norm3(Vec3 a) { float l = sqrtf(dot3(a, a)); return l > 1e-6f ? Vec3{ a.x / l, a.y / l, a.z / l } : Vec3{ 0, 0, 0 }; }
@@ -280,7 +280,6 @@ static void pollWifi(uint32_t now) {
 // ---------------- what comes from the phone app ----------------
 static char noteQ[5][128], noteQFrom[5][24];
 static int noteQn = 0;
-enum BannerKind { BANNER_NONE, BANNER_SETUP, BANNER_PAIR };
 static BannerKind banner = BANNER_NONE;
 static uint32_t bannerHiddenUntil = 0;   // a tap hides the set-up card for a while
 static bool paired = true, pairedKnown = false, pairRequested = false;

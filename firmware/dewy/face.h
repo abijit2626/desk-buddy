@@ -428,7 +428,7 @@ static const char* const EIGHT_BALL[] = { "Yes!", "Definitely", "Without a doubt
 static const int NUM_EIGHT_BALL = sizeof(EIGHT_BALL) / sizeof(EIGHT_BALL[0]);
 
 enum P {
-  Lcx, Lcy, Lw, Lh, Lrot, Rcx, Rcy, Rw, Rh, Rrot, PS, Lpx, Lpy, Rpx, Rpy, PO, SO, OPEN, LT, LA,
+  Lcx, Lcy, Lw, Lh, Lrot, Rcx, Rcy, Rw, Rh, Rrot, PUPIL_SZ, Lpx, Lpy, Rpx, Rpy, PO, SO, OPEN, LT, LA,
   ARCUP, ARCDOWN, BLUSH, HEART, ZS, WAVES, DOTS, BANG, RING, ATIME, CLOCKP,
   MSMILE, MFLAT, MRING, MFROWN, MWAVE, MTALK, MALARM, MSMALL, MSLANT, WOB, SHAKE, JIT, TALK, CAT, ACORN, NP
 };
@@ -444,7 +444,7 @@ inline Spring springFor(int k) {
     case Lw: case Lh: case Rw: case Rh: return { 13, 0.5f };
     case Lpx: case Lpy: case Rpx: case Rpy: return { 8, 0.78f };
     case Lcx: case Lcy: case Rcx: case Rcy: case Lrot: case Rrot: return { 10, 0.85f };
-    case PS: return { 10, 0.7f };
+    case PUPIL_SZ: return { 10, 0.7f };
     default: return { 0, 0 };
   }
 }
@@ -454,16 +454,16 @@ inline int moodPatch(Mood m, KV* out) {
   auto set = [&](int k, float v) { out[n++] = { uint8_t(k), v }; };
   switch (m) {
     case PETTED: set(OPEN, 0.05f); set(ARCUP, 1); set(BLUSH, 1); set(HEART, 1); set(MSMILE, 1); set(Lpy, 10); set(Rpy, 10); break;
-    case BORED: set(LT, 0.46f); set(Lh, 138); set(Rh, 140); set(PS, 54); set(Lpy, 16); set(Rpy, 16); set(MFLAT, 1); break;
+    case BORED: set(LT, 0.46f); set(Lh, 138); set(Rh, 140); set(PUPIL_SZ, 54); set(Lpy, 16); set(Rpy, 16); set(MFLAT, 1); break;
     case SLEEPY: set(OPEN, 0.05f); set(ARCDOWN, 1); set(ZS, 1); set(MRING, 1); break;
-    case ANNOYED: set(LT, 0.36f); set(LA, 22); set(Lh, 142); set(Rh, 142); set(PS, 52); set(Lpx, 4); set(Rpx, -4); set(Lpy, 8); set(Rpy, 8); set(MFROWN, 1); break;
+    case ANNOYED: set(LT, 0.36f); set(LA, 22); set(Lh, 142); set(Rh, 142); set(PUPIL_SZ, 52); set(Lpx, 4); set(Rpx, -4); set(Lpy, 8); set(Rpy, 8); set(MFROWN, 1); break;
     case DIZZY: set(PO, 0); set(SO, 1); set(WOB, 1); set(MWAVE, 1); break;
-    case SURPRISED: set(Lw, 136); set(Lh, 164); set(Rw, 136); set(Rh, 164); set(Lcy, 106); set(Rcy, 106); set(PS, 30); set(Lpx, 0); set(Rpx, 0); set(Lpy, 0); set(Rpy, 0); set(BANG, 1); set(MRING, 1); break;
-    case LISTENING: set(Lw, 128); set(Lh, 156); set(Rw, 128); set(Rh, 156); set(PS, 68); set(Lpx, 4); set(Rpx, -4); set(Lpy, -4); set(Rpy, -4); set(WAVES, 1); set(MSMALL, 1); break;
-    case THINKING: set(Lpx, 24); set(Rpx, 24); set(Lpy, -30); set(Rpy, -30); set(Lrot, -6); set(Rrot, 22); set(PS, 54); set(DOTS, 1); set(MSLANT, 1); break;
+    case SURPRISED: set(Lw, 136); set(Lh, 164); set(Rw, 136); set(Rh, 164); set(Lcy, 106); set(Rcy, 106); set(PUPIL_SZ, 30); set(Lpx, 0); set(Rpx, 0); set(Lpy, 0); set(Rpy, 0); set(BANG, 1); set(MRING, 1); break;
+    case LISTENING: set(Lw, 128); set(Lh, 156); set(Rw, 128); set(Rh, 156); set(PUPIL_SZ, 68); set(Lpx, 4); set(Rpx, -4); set(Lpy, -4); set(Rpy, -4); set(WAVES, 1); set(MSMALL, 1); break;
+    case THINKING: set(Lpx, 24); set(Rpx, 24); set(Lpy, -30); set(Rpy, -30); set(Lrot, -6); set(Rrot, 22); set(PUPIL_SZ, 54); set(DOTS, 1); set(MSLANT, 1); break;
     case TALKING: set(MTALK, 1); set(TALK, 1); break;
-    case ALARM: set(Lw, 136); set(Lh, 162); set(Rw, 136); set(Rh, 162); set(Lcy, 108); set(Rcy, 108); set(Lrot, -18); set(Rrot, 18); set(PS, 26); set(Lpx, 0); set(Rpx, 0); set(Lpy, 0); set(Rpy, 0); set(RING, 1); set(ATIME, 1); set(SHAKE, 1); set(JIT, 1); set(MALARM, 1); break;
-    case CLOCK: set(Lcx, 138); set(Lcy, 34); set(Lw, 40); set(Lh, 46); set(Rcx, 182); set(Rcy, 34); set(Rw, 40); set(Rh, 46); set(Lrot, -10); set(Rrot, 10); set(PS, 20); set(Lpx, 0); set(Rpx, 0); set(Lpy, 8); set(Rpy, 8); set(CLOCKP, 1); break;
+    case ALARM: set(Lw, 136); set(Lh, 162); set(Rw, 136); set(Rh, 162); set(Lcy, 108); set(Rcy, 108); set(Lrot, -18); set(Rrot, 18); set(PUPIL_SZ, 26); set(Lpx, 0); set(Rpx, 0); set(Lpy, 0); set(Rpy, 0); set(RING, 1); set(ATIME, 1); set(SHAKE, 1); set(JIT, 1); set(MALARM, 1); break;
+    case CLOCK: set(Lcx, 138); set(Lcy, 34); set(Lw, 40); set(Lh, 46); set(Rcx, 182); set(Rcy, 34); set(Rw, 40); set(Rh, 46); set(Lrot, -10); set(Rrot, 10); set(PUPIL_SZ, 20); set(Lpx, 0); set(Rpx, 0); set(Lpy, 8); set(Rpy, 8); set(CLOCKP, 1); break;
     default: set(MSMILE, 1); break;
   }
   return n;
@@ -1151,7 +1151,7 @@ private:
     float eyeOp = clampf((c[OPEN] - 0.06f) / 0.3f, 0, 1);
     if (eyeOp < 0.01f) return;
     float a = w / 2, ym = 0.06f * h, bt = 0.56f * h, bb = 0.44f * h, piv = 0.22f * h;
-    float ps = c[PS], kc = clampf(c[CAT], 0, 1), ka = clampf(c[ACORN], 0, 1);
+    float ps = c[PUPIL_SZ], kc = clampf(c[CAT], 0, 1), ka = clampf(c[ACORN], 0, 1);
     // pupil shape: round (ps x ps), cat slit, or acorn (a tall oval reaching past the bottom of the eye,
     // leaving a crescent of eye colour around it). Acorn size still follows the mood through ps.
     float sz = ps / 60.f;
