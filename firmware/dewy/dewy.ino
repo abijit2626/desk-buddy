@@ -212,6 +212,7 @@ static void pollOrientation(uint32_t now) {
 // ---------------- Wi-Fi, updates over Wi-Fi, the cloud ----------------
 #include "cloud.h"
 #include "portal.h"
+#include "voice.h"
 
 static bool otaOn = false;
 static uint32_t wifiStartAt = 0;
@@ -668,6 +669,7 @@ void setup() {
   addAffection(0); affDirty = false;
 
   startWifi();
+  voiceBegin();
   lastInteract = lastFrame = millis();
   Serial.println("Type \"help\" for test commands.");
 }
@@ -676,6 +678,7 @@ void loop() {
   uint32_t now = millis();
   pollSerial();
   pollTouch(now);
+  voicePoll(now);
   pollMotion(now);
   pollOrientation(now);
   pollWifi(now);
