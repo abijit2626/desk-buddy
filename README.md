@@ -10,6 +10,7 @@ and tilts, and helps with study timers, reminders, the weather and notes.
 | [`case/`](case/) | Printable STL files for the case (body, visor, back panel) and the scripts that generate them |
 | [`docs/manual/`](docs/manual/) | The illustrated user manual (PDF) and its source |
 | [`cloud/`](cloud/) | The Cloudflare server and the iPhone home-screen app (study timer, notes, alarms, reminders, settings). Start with [cloud/README.md](cloud/README.md). |
+| [`virtual-dewy/`](virtual-dewy/) | A local web app that runs Dewy's real firmware logic in a browser with wireable virtual hardware, a mock cloud and a voice loop. Start with [virtual-dewy/README.md](virtual-dewy/README.md). |
 
 ## Hardware
 

@@ -1,0 +1,57 @@
+{
+  "builtAt": "2026-11-11T14:40:02.211Z",
+  "zig": "0.17.1",
+  "gitRev": "8c6f013",
+  "dewyVersion": "1.0.0",
+  "files": [
+    {
+      "name": "cacerts.h",
+      "lines": 303,
+      "sha256": "013fccc5941f546e7135970b067d115593212cb59c438f263d4179f33dffc2e3"
+    },
+    {
+      "name": "cloud.h",
+      "lines": 307,
+      "sha256": "1b00a785ad8cad82509dba8fe99a2461611c8eccebd569ce78f652ac85394c5f"
+    },
+    {
+      "name": "config.h",
+      "lines": 97,
+      "sha256": "a480f813ba31bffa1c5ad733bdf50065b32ae5bb75e0e8847990ce2e762f8ead"
+    },
+    {
+      "name": "dewy.ino",
+      "lines": 688,
+      "sha256": "b09e28b8187141cfde2b614355a6e049970802bfdd0eaf1ab15c824d6a224304"
+    },
+    {
+      "name": "display.h",
+      "lines": 79,
+      "sha256": "887b5838f1d05108fb1b01436453df0c7a0907e1b14d0e22fb5c23b082f44776"
+    },
+    {
+      "name": "face.h",
+      "lines": 1234,
+      "sha256": "954fad9eb82ef420883cd077cdda834665722d1578937bd4503b354581d09d9d"
+    },
+    {
+      "name": "motion.h",
+      "lines": 99,
+      "sha256": "3e1c90a2e424a702797d1006acbe0672674a883692111e456ed73b046d0a03cc"
+    },
+    {
+      "name": "portal.h",
+      "lines": 129,
+      "sha256": "79d68de3118ab291f761e569f2d5a69c8e9736a617d981a305fc1b7d62065ea5"
+    },
+    {
+      "name": "secrets.example.h",
+      "lines": 9,
+      "sha256": "ea67eb1de6c6e74932ed2c457949a64a8b3611cec4f710f69e2a2363e49d7a81"
+    }
+  ],
+  "combinedSha256": "f30182010ec5daf1f9931e578ba763b541bdda7494971538db996c09372b7b7b",
+  "hostSha256": "3b1b0508ceecda1d8c80de521a0285595b5df5cd41792c98d9c2b8e73316a8c4",
+  "wasmBytes": 244027,
+  "note": "secrets.h was not used: the build uses wasm/virtual_secrets.h (made-up values)."
+}
