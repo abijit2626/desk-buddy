@@ -102,6 +102,7 @@ static int httpsJson(const char* method, const String& url, const char* body, Js
   client.setCACert(CA_BUNDLE);
   client.setTimeout(15);
   HTTPClient http;
+  http.setUserAgent("Dewy-ESP32/1.0");
   http.setTimeout(15000);
   if (!http.begin(client, url)) return -1;
   if (sendToken && deviceToken[0]) http.addHeader("Authorization", String("Bearer ") + deviceToken);
@@ -206,6 +207,7 @@ static bool fetchWeather() {
   WiFiClientSecure client;
   client.setCACert(CA_BUNDLE);
   HTTPClient http;
+  http.setUserAgent("Dewy-ESP32/1.0");
   char url[180];
   snprintf(url, sizeof url, "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f&current=weather_code,is_day", float(cityLat), float(cityLon));
   bool ok = false;
@@ -230,6 +232,7 @@ static void installFirmware() {
   WiFiClientSecure client;
   client.setCACert(CA_BUNDLE);
   HTTPClient http;
+  http.setUserAgent("Dewy-ESP32/1.0");
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);   // GitHub sends release files from another address
   http.setTimeout(20000);
   bool ok = false;

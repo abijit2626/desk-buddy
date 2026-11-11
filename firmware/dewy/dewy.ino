@@ -468,6 +468,8 @@ static void handleCommand(String raw) {
   else if (cmd == "listen") buddy.listen();
   else if (cmd == "think") buddy.think();
   else if (cmd == "talk") buddy.talk();
+  else if (cmd == "ask") { if (!voiceRequest()) Serial.println("[voice] cannot start: needs Wi-Fi, a server, mic and speaker, and no alarm ringing"); }
+  else if (cmd == "mic") { micTest = !micTest; Serial.printf("mic test %s\n", micTest ? "on" : "off"); }
   else if (cmd == "pet") { buddy.pet(); addAffection(1); }
   else if (cmd == "poke") buddy.poke();
   else if (cmd == "ignore") { face::Face::Step s[] = { { face::BORED, 5000 }, { face::SLEEPY, 0 } }; buddy.play(s, 2); }
@@ -592,6 +594,7 @@ static void pollTouch(uint32_t now) {
     if (petting) buddy.petEnd();
     else if (lastSeen - downAt < TAP_MAX_MS) {
       if (buddy.bannerShown()) { bannerHiddenUntil = now + 30UL * 60UL * 1000UL; setBanner(BANNER_NONE); return; }   // a tap hides the set-up card
+      if (lastTapAt && now - lastTapAt < 450 && voiceRequest()) { lastTapAt = 0; return; }   // double-tap = talk to Dewy
       buddy.poke(); addAffection(0.2f); lastTapAt = now;
     }
   }
