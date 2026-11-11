@@ -70,13 +70,42 @@ listening during a long conversation to count false wake-ups.
 
 ## The trained model
 
-The first model is in [`model/`](model/): `stream_state_internal_quant.tflite` (60 KB) and `hey_dewy.json` (its settings).
-`python3 make_model_header.py` turns them into the C header for the firmware.
+The model in [`model/`](model/) is the **round 2** one: `stream_state_internal_quant.tflite` (61 KB) and
+`hey_dewy.json` (its settings). `python3 make_model_header.py` turns them into the C header for the firmware.
 
-Test results of this first model (on the compressed model, with computer-made test voices, so real voices will do
-worse): at cutoff 0.98 it hears about 82% of "Hey Dewy" with one false wake-up per 1.8 hours of dinner-party talk;
-at 0.97, 84% and one per 53 minutes. It was trained without the extra AudioSet noise (that download failed, see
-the notebook), so a second round with it should help. The real test is with the mic on Dewy.
+| | Round 1 (computer voices only) | Round 2 (plus real recordings) |
+|---|---|---|
+| Computer-made test voices | about 82% heard at cutoff 0.98 | harder test set, AUC 0.826 |
+| Real voice clips kept back from training | 1 of 10 heard at 0.98 | 10 of 10 heard at every cutoff |
+| False wake-ups | none seen in the small test | one: "hi abi" with loud background noise |
+
+The false-wake-up rate is only a rough guess (one event in 1.3 minutes of "other" audio), so don't trust the
+per-hour figure. The `cutoff` in `hey_dewy.json` stays at 0.98: with a strict cutoff a missed "Hey Dewy" just
+means saying it twice, while a false wake-up interrupts the desk. Tune it again with the real mic.
+
+The model can only be judged properly on Dewy's own microphone, so round 3 comes with the hardware (see below).
+Round 1's model is in the git history (`wake-word-hey-dewy` branch).
+
+## Round 2: train with real voices
+
+The first model only ever heard computer voices, and `test_real_voice.py` showed it: on real voice notes at the
+default cutoff it heard 1 of 10 (about 82% on the computer test voices). Round 2 adds real recordings.
+
+1. Record with a normal voice recorder (not WhatsApp: it squashes the sound). Any format works.
+   - `yes`: 60 to 100 clips of you, and 20 to 30 of the person who will use Dewy, each saying "Hey Dewy" once.
+     Vary the tone (normal, quiet, a question, a command), the distance (close, across the room) and the background
+     (quiet, a fan, music or TV on low). A second of quiet before and after is fine, it is trimmed automatically.
+   - `no`: 10 minutes or more of everything else in the same rooms: talking, near-misses ("hey siri", "hey buddy",
+     "hey dude", "dewey", "do we"), a song, a quiet room.
+2. Put them in `~/dewy-wakeword/real_recordings/yes` and `.../no`. **Keep some clips back** (say 10 of each) in
+   `~/real-test/` for `test_real_voice.py`: a clip used for training can't test it.
+3. In the notebook, run the cells again from "Download room echoes" (this time the AudioSet background noise
+   downloads properly) through to the end. Round 1's model is kept in `trained_models/hey_dewy_round1`.
+   Training takes about as long as before (2 to 3 hours on an RTX 4060).
+4. Test with `test_real_voice.py`, then pick the cutoff from its table.
+
+A third round, with recordings made by Dewy's own mic, comes once the hardware is here: the mic changes the sound
+more than anything else.
 
 ## Next: on Dewy
 
@@ -95,3 +124,24 @@ The voice generator is pinned to piper-sample-generator `v2.0.0`, because newer 
 The notebook is adapted from microWakeWord's `basic_training_notebook.ipynb` by Kevin Ahrendt (Apache 2.0).
 Voices come from [Piper sample generator](https://github.com/rhasspy/piper-sample-generator). The background
 sound datasets it downloads have mixed licences, so the trained model is for personal, non-commercial use.
+
+
+## Testing with your own voice
+
+The model was tested on synthetic voices. `test_real_voice.py` runs the same steps as the firmware on real
+recordings and tells you how often it hears you and how often it triggers by mistake, at several cutoffs.
+
+```sh
+sudo apt install ffmpeg                       # reads phone recordings (m4a, mp3, ...)
+source ~/dewy-wakeword/venv/bin/activate      # or: pip install numpy pymicro-features ai-edge-litert
+mkdir -p ~/real-test/yes ~/real-test/no
+# put ~20 clips of you saying "Hey Dewy" in yes/, and other sound (talking, "hey siri", a song, a quiet room, a few minutes in total) in no/
+python test_real_voice.py ~/real-test/yes ~/real-test/no
+```
+
+Sanity check of the script itself: run it with the synthetic clips from training as the `yes` folder
+(`~/dewy-wakeword/generated_samples` or similar). Most should be heard. If they are not, the script is wrong, not the model.
+
+Before round 3, add near-misses to `NEGATIVE_PHRASES` ("hi abi", "hey abi", "hi baby": the names and greetings that
+sound like it) and record about 10 more minutes of "no" audio: names of the people around Dewy, normal talk in the
+languages spoken at home, and TV or music. Keep some back in `~/real-test/no` to test with.
