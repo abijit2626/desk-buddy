@@ -10,6 +10,8 @@
 #include <WiFiClientSecure.h>
 #include <esp_heap_caps.h>
 #include "wakeword.h"
+#include "vad.h"
+#include "replyreader.h"
 
 // ---- pins. Mic: INMP441 (L/R to GND). Speaker: MAX98357A. ----
 #ifndef PIN_MIC_SCK
@@ -50,6 +52,12 @@
 enum VoiceState { V_IDLE = 0, V_LISTEN, V_THINK, V_SPEAK };
 static volatile int vState = V_IDLE;
 static volatile bool vRequested = false;
+static volatile bool vByWake = false;       // this turn was started by "Hey Dewy" (not a tap or the serial command)
+static volatile bool vCancel = false;       // the main loop asks the voice task to drop the turn (alarm, face down, a poking burst)
+static uint32_t vTapAt = 0;                 // when a double-tap last started a turn (main loop only)
+static char vNotice[128] = "";              // something to show on screen after a turn that went wrong, written by the voice task
+static volatile bool vNoticeNew = false;
+static NoiseTracker noiseTrack;             // the room's background level while idle (voice task only)
 static bool micOk = false, vReady = false;
 static bool micTest = (MIC_TEST != 0);
 static int16_t* recBuf = nullptr;
@@ -95,6 +103,12 @@ static int micRead(int16_t* out, int n, uint32_t waitMs = 0) {
     out[i] = (int16_t)v;
   }
   return cnt;
+}
+
+static float rmsOf(const int16_t* x, int n) {
+  int64_t sq = 0;
+  for (int i = 0; i < n; i++) sq += (int32_t)x[i] * (int32_t)x[i];
+  return n > 0 ? sqrtf((float)sq / n) : 0.0f;
 }
 
 // ---------------------------------------------------------------- speaker
@@ -146,7 +160,7 @@ static void playReply() {
   Serial.printf("[voice] playing %u samples at %u Hz\n", (unsigned)total, (unsigned)rate);
   i2s_set_clk(SPK_PORT, rate, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_STEREO);
   int16_t out[512];
-  for (size_t i = 0; i < total;) {
+  for (size_t i = 0; i < total && !vCancel;) {
     int k = (int)((total - i) < 256 ? (total - i) : 256);
     for (int j = 0; j < k; j++) {
       int16_t s;
@@ -166,62 +180,34 @@ static void playReply() {
 
 // ---------------------------------------------------------------- recording
 // Waits for you to speak, stops about 1.2 s after you stop. Returns the number of samples in recBuf (0 = nothing heard).
-static int recordUtterance() {
+// The speech detector is in vad.h. After "Hey Dewy" very little is skipped, so the start of the question isn't lost.
+static int recordUtterance(bool byWake) {
   const int FR = 256;                          // 16 ms per frame
   int16_t fr[256];
-  int n = 0, frames = 0, loud = 0, quiet = 0, lastLoudEnd = 0;
-  bool speech = false;
-  float noiseSum = 0, thr = 600;
+  Vad vad;
+  vad.begin(noiseTrack.ready() ? noiseTrack.level : 0, byWake ? 2 : 10);   // a tap's click needs 10 frames to die away
+  int n = 0, lastLoudEnd = 0;
   uint32_t t0 = millis();
-  while (n + FR <= REC_MAX_SAMPLES) {
+  while (n + FR <= REC_MAX_SAMPLES && !vCancel) {
     if (millis() - t0 > 15000) break;
     int got = micRead(fr, FR, 60);
     if (got <= 0) continue;
-    int64_t sq = 0;
-    for (int i = 0; i < got; i++) sq += (int32_t)fr[i] * (int32_t)fr[i];
-    float rms = sqrtf((float)sq / got);
-    frames++;
-    if (frames <= 10) continue;                // throw away old audio and the tap sound
-    memcpy(recBuf + n, fr, got * sizeof(int16_t));
-    n += got;
-    if (frames <= 22) {                        // learn the room noise
-      noiseSum += rms;
-      if (frames == 22) { thr = noiseSum / 12.0f * 3.0f + 150.0f; if (thr < 450) thr = 450; if (thr > 2500) thr = 2500; }
-      continue;
-    }
-    if (rms > thr) {
-      quiet = 0;
-      if (speech) lastLoudEnd = n;
-      else if (++loud >= 3) { speech = true; lastLoudEnd = n; }
-    } else {
-      loud = 0;
-      if (speech) quiet++;
-    }
-    if (speech && quiet >= 75) break;          // 1.2 s of quiet: done
-    if (!speech && millis() - t0 > 6000) return 0;
+    Vad::Verdict v = vad.feed(rmsOf(fr, got));
+    if (v.keep) { memcpy(recBuf + n, fr, got * sizeof(int16_t)); n += got; }
+    if (v.loud && vad.speech()) lastLoudEnd = n;
+    if (v.done) break;
+    if (!vad.speech() && millis() - t0 > 6000) return 0;
   }
-  if (!speech) return 0;
+  if (vCancel || !vad.speech()) return 0;
+  int stored = n;
   n = lastLoudEnd + 4800;                      // keep 0.3 s after the last word
-  if (n > REC_MAX_SAMPLES) n = REC_MAX_SAMPLES;
+  if (n > stored) n = stored;                  // but never more than was recorded
   if (n < 6400) return 0;                      // the server needs at least 0.4 s
-  Serial.printf("[voice] recorded %.1f s (threshold %.0f)\n", n / (float)MIC_RATE, thr);
+  Serial.printf("[voice] recorded %.1f s (threshold %.0f, background %.0f)\n", n / (float)MIC_RATE, vad.threshold(), noiseTrack.ready() ? noiseTrack.level : -1.0f);
   return n;
 }
 
 // ---------------------------------------------------------------- cloud
-struct BufStream : public Stream {            // collects the reply into playBuf
-  size_t write(uint8_t b) override { return write(&b, 1); }
-  size_t write(const uint8_t* d, size_t n) override {
-    size_t room = playLen < PLAY_MAX_BYTES ? PLAY_MAX_BYTES - playLen : 0;
-    size_t c = n < room ? n : room;
-    if (c) { memcpy(playBuf + playLen, d, c); playLen += c; }
-    return n;                                   // extra bytes beyond the limit are dropped
-  }
-  int available() override { return 0; }
-  int read() override { return -1; }
-  int peek() override { return -1; }
-};
-
 static String urlDecode(const String& s) {
   String out;
   for (size_t i = 0; i < s.length(); i++) {
@@ -235,10 +221,40 @@ static String urlDecode(const String& s) {
   return out;
 }
 
+// Something to show on the face once the turn is over (voicePoll puts it on a card), so a refusal isn't silent.
+static void say(const char* text) {
+  strlcpy(vNotice, text, sizeof vNotice);
+  vNoticeNew = true;
+}
+
+// The server answered with words only. That is {"error": "..."} for a refusal (like the daily limit) and
+// {"heard": "...", "reply": "..."} when nobody spoke or its voice isn't available. Shows what it said, or a fallback.
+static void sayServersWords(HTTPClient& http, int code) {
+  const char* fallback = code == 401 ? "I lost my link to my server. Try again in a minute."
+                       : code > 0     ? "My server had a problem. Try again in a moment."
+                                      : "I can't reach my server right now.";
+  long size = code > 0 ? http.getSize() : 0;
+  if (size > 0 && size <= 1024) {
+    JsonDocument d;
+    String body = http.getString();
+    if (!deserializeJson(d, body.c_str())) {
+      const char* msg = d["error"] | (const char*)(d["reply"] | "");
+      if (msg[0]) { say(msg); return; }
+    }
+  }
+  say(fallback);
+}
+
 // Sends the recording and collects the reply. Returns true when playBuf holds a WAV to play.
 static bool talkToCloud(int nSamples) {
+  TlsGuard tls(30000);                            // the network task may be mid-sync: wait for its turn
+  if (!tls.ok) { Serial.println("[voice] the network is busy"); say("I'm busy right now. Try again in a moment."); return false; }
   uint32_t freeRam = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-  if (freeRam < 55000) { Serial.printf("[voice] not enough free memory for HTTPS (%u bytes)\n", (unsigned)freeRam); return false; }
+  if (freeRam < 55000) {
+    Serial.printf("[voice] not enough free memory for HTTPS (%u bytes)\n", (unsigned)freeRam);
+    say("I'm short of memory. Try again in a moment.");
+    return false;
+  }
   WiFiClientSecure client;
   client.setCACert(CA_BUNDLE);
   client.setTimeout(20);
@@ -246,54 +262,70 @@ static bool talkToCloud(int nSamples) {
   http.setTimeout(30000);
   http.setUserAgent(VOICE_UA);
   String url = String(DEWY_SERVER) + "/api/device/chat";
-  if (!http.begin(client, url)) { Serial.println("[voice] could not start the request"); return false; }
+  if (!http.begin(client, url)) { Serial.println("[voice] could not start the request"); say("I can't reach my server right now."); return false; }
   http.addHeader("Authorization", String("Bearer ") + deviceToken);
   http.addHeader("Content-Type", "audio/pcm");
   http.addHeader("X-Dewy-Version", DEWY_VERSION);
-  const char* keys[] = { "x-dewy-heard", "x-dewy-reply", "Content-Type" };
-  http.collectHeaders(keys, 3);
+  const char* keys[] = { "x-dewy-heard", "x-dewy-reply", "Content-Type", "Transfer-Encoding" };
+  http.collectHeaders(keys, 4);
   uint32_t t0 = millis();
   int code = http.POST((uint8_t*)recBuf, (size_t)nSamples * 2);
   if (code != 200) {
     Serial.printf("[voice] server answered %d\n", code);
+    sayServersWords(http, code);
+    http.end();
+    return false;
+  }
+  String ctype = http.header("Content-Type");
+  if (!ctype.startsWith("audio/")) {              // words only: nobody spoke, the day's voice budget is used up, or its voice failed
+    Serial.println("[voice] the server answered in words only");
+    sayServersWords(http, code);
     http.end();
     return false;
   }
   String heard = urlDecode(http.header("x-dewy-heard"));
   String reply = urlDecode(http.header("x-dewy-reply"));
-  String ctype = http.header("Content-Type");
   Serial.printf("[voice] heard: %s\n", heard.c_str());
   Serial.printf("[voice] reply: %s\n", reply.c_str());
-  bool audio = ctype.startsWith("audio/");
-  if (audio) {
-    playLen = 0;
-    BufStream bs;
-    http.writeToStream(&bs);
+  playLen = 0;
+  bool whole = false;
+  auto* body = http.getStreamPtr();
+  if (body) {
+    bool chunked = strcasecmp(http.header("Transfer-Encoding").c_str(), "chunked") == 0;
+    whole = readReplyBody(*body, (long)http.getSize(), chunked, 15000, 60000, [](const uint8_t* d, size_t n) {
+      size_t room = PLAY_MAX_BYTES - playLen, c = n < room ? n : room;
+      memcpy(playBuf + playLen, d, c);
+      playLen += c;
+      return c == n;                              // false when the buffer is full: play what fits
+    });
   }
   http.end();
-  Serial.printf("[voice] answer took %lu ms, %u bytes of sound\n", (unsigned long)(millis() - t0), (unsigned)playLen);
-  return audio && playLen > 48;
+  Serial.printf("[voice] answer took %lu ms, %u bytes of sound%s\n", (unsigned long)(millis() - t0), (unsigned)playLen, whole ? "" : " (cut short)");
+  return playLen > 48;
 }
 
-static bool voiceRequest();
+static bool voiceRequest(bool byWake = false);
 
 static void voiceTask(void*) {
   int16_t chunk[160];                          // 10 ms of audio
   for (;;) {
     if (!vRequested) {
-      if (micTest || !wakeOk || !wakeOn) { vTaskDelay(pdMS_TO_TICKS(20)); continue; }
-      int got = micRead(chunk, 160, 50);       // listen for "Hey Dewy" all the time while idle
-      if (got > 0 && wakeFeed(chunk, got) && !voiceRequest())
-        Serial.println("[wake] heard you, but can't talk now (no Wi-Fi or server, alarm ringing, or face down)");
+      if (micTest) { vTaskDelay(pdMS_TO_TICKS(20)); continue; }   // the mic check on the main loop reads the mic instead
+      int got = micRead(chunk, 160, 50);       // always listening while idle: the room's background level, and "Hey Dewy"
+      if (got <= 0) continue;
+      noiseTrack.feed(rmsOf(chunk, got), got * 1000.0f / MIC_RATE);
+      if (wakeFeed(chunk, got) && !voiceRequest(true))
+        Serial.println("[wake] heard you, but can't talk now (no Wi-Fi or server, alarm ringing, face down, or updating)");
       continue;
     }
     vState = V_LISTEN;
-    int n = recordUtterance();
-    if (n <= 0) Serial.println("[voice] heard nothing");
-    else {
+    int n = recordUtterance(vByWake);
+    if (n <= 0) { if (!vCancel) Serial.println("[voice] heard nothing"); }
+    else if (!vCancel) {
       vState = V_THINK;
-      if (talkToCloud(n)) { vState = V_SPEAK; playReply(); }
+      if (talkToCloud(n) && !vCancel) { vState = V_SPEAK; playReply(); }
     }
+    if (vCancel) Serial.println("[voice] turn dropped");
     vState = V_IDLE;
     vRequested = false;
     i2s_zero_dma_buffer(MIC_PORT);             // drop audio from while Dewy was talking...
@@ -315,11 +347,15 @@ static void voiceBegin() {
   vReady = true;
 }
 
-// Starts a conversation. Returns false if it can't (busy, no Wi-Fi, not registered with the server, alarm ringing).
-static bool voiceRequest() {
+// Starts a conversation. Returns false if it can't (busy, no Wi-Fi, not registered with the server, alarm ringing,
+// lying face down, or a firmware update is being installed: it restarts Dewy at the end).
+static bool voiceRequest(bool byWake) {
   if (!vReady || vState != V_IDLE || vRequested) return false;
   if (buddy.mood() == face::ALARM || buddy.faceDown()) return false;
+  if (fwProgress >= 0) return false;
   if (WiFi.status() != WL_CONNECTED || !cloudOn() || !deviceToken[0]) return false;
+  vCancel = false;
+  vByWake = byWake;
   vRequested = true;
   return true;
 }
@@ -327,13 +363,27 @@ static bool voiceRequest() {
 static void voicePoll(uint32_t now) {
   static int shown = V_IDLE;
   int st = vState;
+  // An alarm, or lying face down (quiet time), beats a conversation: drop the turn and leave the face alone.
+  if (st != V_IDLE && (buddy.mood() == face::ALARM || buddy.faceDown())) vCancel = true;
   if (st != shown) {                            // follow the voice task with the face
     shown = st;
     interacted();
-    if (st == V_LISTEN) buddy.listen();
-    else if (st == V_THINK) buddy.setMood(face::THINKING);
-    else if (st == V_SPEAK) buddy.talk();
-    else buddy.setMood(face::HAPPY);
+    if (st == V_IDLE) {
+      // The turn is over. Put the happy face back only if the face still wears one of the voice faces: an alarm, quiet
+      // time, the complaint about being upside down, or the annoyed face from being poked must stay.
+      face::Mood m = buddy.mood();
+      if (m == face::LISTENING || m == face::THINKING || m == face::TALKING) buddy.setMood(buddy.upsideDown() ? face::ANNOYED : face::HAPPY);
+    } else if (!vCancel && !buddy.upsideDown()) {   // upside down it keeps complaining (it still listens and answers)
+      if (st == V_LISTEN) buddy.listen();
+      else if (st == V_THINK) buddy.setMood(face::THINKING);
+      else if (st == V_SPEAK) buddy.talk();
+    }
+  }
+  if (vNoticeNew && st == V_IDLE) {             // the turn went wrong: say why on a card, once the face is back
+    char msg[sizeof vNotice];
+    strlcpy(msg, vNotice, sizeof msg);
+    vNoticeNew = false;
+    buddy.showNote(msg, "Dewy");
   }
   if (!micOk || !micTest || st != V_IDLE || vRequested) return;
   // live loudness bar (the mic check)
@@ -354,7 +404,7 @@ static void voicePoll(uint32_t now) {
   lastPrint = now;
   int rms = count ? (int)sqrt((double)sumSq / count) : 0;
   char bar[33];
-  int len = rms / 150;
+  int len = rms / 50;                           // 30 steps = 1500
   if (len > 30) len = 30;
   for (int i = 0; i < 30; i++) bar[i] = i < len ? '#' : ' ';
   bar[30] = 0;

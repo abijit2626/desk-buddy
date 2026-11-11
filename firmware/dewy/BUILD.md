@@ -55,6 +55,18 @@ Without the `FQBN` options the command line uses the 4MB default and reports the
 - `ask`: start a conversation (same as double-tap or "Hey Dewy")
 - `ww on`, `ww off`, `ww debug` (prints the best wake word score every second)
 
+## Tuning how quietly she can talk
+Dewy only starts recording once the sound is louder than a threshold. The threshold follows the room's background
+noise, but never goes below `VAD_MIN_THR` (150, in `vad.h`). That number is a guess from the INMP441 datasheet.
+On the real mic: type `mic`, talk at her normal distance and read the `rms` numbers. If her speech peaks below about
+200, lower `VAD_MIN_THR` (or `MIC_SHIFT`, which makes the whole mic louder); if the room alone reaches it, raise it.
+Each recording also prints the threshold and background it used: `[voice] recorded 1.8 s (threshold 150, background 12)`.
+
+## PC tests
+`bash firmware/test/run_tests.sh` builds the sketch on a PC with stand-in libraries and runs the tests, including
+`vad_test` (speech detector), `reply_test` (reading the reply) and `voice_test` (the voice code with a pretend mic,
+speaker and server). They check the logic only, not the real I2S, TLS or timing.
+
 ## Updating the wake word model
 `hey_dewy_model.h` is made from `stream_state_internal_quant.tflite`. After a new training round, regenerate it:
 ```

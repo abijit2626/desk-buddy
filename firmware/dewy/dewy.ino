@@ -365,7 +365,8 @@ static void pollCloud(uint32_t now) {
 
   // firmware updates: only when nothing important is on screen
   face::Mood m = buddy.mood();
-  updateAllowed = !buddy.timerActive() && !buddy.overlayActive() && !buddy.busy() && (m == face::HAPPY || m == face::SLEEPY || m == face::BORED);
+  updateAllowed = !buddy.timerActive() && !buddy.overlayActive() && !buddy.busy() && (m == face::HAPPY || m == face::SLEEPY || m == face::BORED)
+                  && vState == V_IDLE && !vRequested;      // never in the middle of a conversation: the restart would cut it off
   static bool updating = false;
   float p = fwProgress;
   if (p >= 0) { buddy.setUpdateProgress(p); updating = true; }
@@ -595,7 +596,17 @@ static void pollTouch(uint32_t now) {
     if (petting) buddy.petEnd();
     else if (lastSeen - downAt < TAP_MAX_MS) {
       if (buddy.bannerShown()) { bannerHiddenUntil = now + 30UL * 60UL * 1000UL; setBanner(BANNER_NONE); return; }   // a tap hides the set-up card
-      if (lastTapAt && now - lastTapAt < 450 && voiceRequest()) { lastTapAt = 0; return; }   // double-tap = talk to Dewy
+      static uint32_t noVoiceUntil = 0;                       // after a poking burst, taps don't start a conversation for a while
+      bool pokingBurst = noVoiceUntil && int32_t(noVoiceUntil - now) > 0;
+      if (lastTapAt && now - lastTapAt < 450 && !pokingBurst && voiceRequest()) {   // double-tap = talk to Dewy
+        lastTapAt = 0; vTapAt = now; return;
+      }
+      // A third quick tap right after a double-tap is someone poking Dewy, not asking it something. Drop the
+      // conversation and count the tap it swallowed as a poke too, so five quick pokes still make it annoyed.
+      if (vTapAt && now - vTapAt < 700 && !vByWake && (vState == V_LISTEN || (vState == V_IDLE && vRequested))) {
+        vCancel = true; buddy.poke(); noVoiceUntil = now + 1500;
+      }
+      vTapAt = 0;
       buddy.poke(); addAffection(0.2f); lastTapAt = now;
     }
   }

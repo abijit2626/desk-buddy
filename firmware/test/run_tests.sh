@@ -18,6 +18,10 @@ echo "== lean, face down, upside down"
 $CXX -Iot -Imock -I"$AJ" -o orient_bin orient_test.cpp && ./orient_bin | grep -E "^-- |showing|faceDown=|upside="
 echo "== cloud: sync, pairing, notes, settings, firmware check, setup page"
 $CXX -Icloudmock -Imock -I"$AJ" -o cloud_bin cloud_test.cpp && ./cloud_bin | grep -E "FAIL|passed"
+echo "== voice: speech detector, reading replies, the voice code with a pretend mic, speaker and server"
+$CXX -o vad_bin vad_test.cpp && ./vad_bin | grep -E "FAIL|passed"
+$CXX -Imock -o reply_bin reply_test.cpp && ./reply_bin | grep -E "FAIL|passed"
+$CXX -Icloudmock -Imock -I"$AJ" -o voice_bin voice_test.cpp && ./voice_bin | grep -E "FAIL|passed"
 echo "== face renders (feat/*.ppm) and speed"
 g++ -std=c++17 -O2 -o features_bin features.cpp && ./features_bin | tail -1
 g++ -std=c++17 -O2 -o timing timing.cpp && ./timing
