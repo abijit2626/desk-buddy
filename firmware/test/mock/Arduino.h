@@ -7,13 +7,15 @@
 #include <cstdarg>
 #include <ctime>
 inline uint32_t millis() { static uint32_t t = 0; return t += 7; }
-inline void delay(uint32_t) {}
+inline int g_delayCalls = 0;   // tests count how often the code really sleeps
+inline void delay(uint32_t) { g_delayCalls++; }
 inline uint32_t esp_random() { return 1; }
 struct String {
   std::string s; String() {} String(const char* c) : s(c ? c : "") {} String(const std::string& x) : s(x) {}
   void trim() { size_t a = s.find_first_not_of(" \t\r\n"), b = s.find_last_not_of(" \t\r\n"); s = a == std::string::npos ? "" : s.substr(a, b - a + 1); }
   void toLowerCase() { for (auto& c : s) c = char(tolower(c)); }
   unsigned length() const { return s.size(); }
+  char operator[](size_t i) const { return s[i]; }
   const char* c_str() const { return s.c_str(); }
   bool startsWith(const char* p) const { return s.rfind(p, 0) == 0; }
   String substring(int a, int b) const { String r; r.s = s.substr(a, b - a); return r; }
@@ -40,8 +42,10 @@ inline EspClass ESP;
 typedef void* SemaphoreHandle_t;
 #define portMAX_DELAY 0xffffffffu
 inline SemaphoreHandle_t xSemaphoreCreateMutex() { static int m; return &m; }
-inline int xSemaphoreTake(SemaphoreHandle_t, uint32_t) { return 1; }
-inline int xSemaphoreGive(SemaphoreHandle_t) { return 1; }
+#define pdTRUE 1
+inline int g_semTakes = 0, g_semGives = 0; inline bool g_semFail = false;   // tests count them, or make Take time out
+inline int xSemaphoreTake(SemaphoreHandle_t, uint32_t) { if (g_semFail) return 0; g_semTakes++; return 1; }
+inline int xSemaphoreGive(SemaphoreHandle_t) { g_semGives++; return 1; }
 #if !defined(__GLIBC__) || __GLIBC__ < 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ < 38)
 inline size_t strlcpy(char* d, const char* s, size_t n) { size_t l = strlen(s); if (n) { size_t c = l < n - 1 ? l : n - 1; memcpy(d, s, c); d[c] = 0; } return l; }
 #endif

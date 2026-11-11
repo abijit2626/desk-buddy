@@ -12,4 +12,6 @@ struct WiFiClass {
   int scanNetworks(bool = false) { return -1; } int scanComplete() { return 2; } String SSID(int i) { return String(i ? "Home <Wi-Fi>" : "Dewy's \"home\""); }
 };
 inline WiFiClass WiFi;
-struct WiFiClient { int pos = 0; std::string data; size_t available() { return data.size() - pos; } int readBytes(uint8_t* b, size_t n) { size_t k = std::min(n, available()); memcpy(b, data.data() + pos, k); pos += int(k); return int(k); } };
+struct WiFiClient { int pos = 0; std::string data; size_t available() { return data.size() - pos; }
+  bool connected() { return pos < int(data.size()); }
+  int read(uint8_t* b, size_t n) { return readBytes(b, n); } int readBytes(uint8_t* b, size_t n) { size_t k = std::min(n, available()); memcpy(b, data.data() + pos, k); pos += int(k); return int(k); } };

@@ -2,6 +2,7 @@
 #pragma once
 #include <cstdint>
 enum spi_host_device_t { SPI2_HOST = 1, SPI3_HOST = 2 };
+inline int g_touch = 0;   // tests set this to 1 while a finger is on the screen
 namespace lgfx { inline namespace v1 {
 struct swap565_t { uint16_t raw; };
 struct GFXglyph { uint32_t bitmapOffset; uint8_t width, height, xAdvance; int8_t xOffset, yOffset; };
@@ -17,7 +18,7 @@ struct Panel_ILI9341 : Panel_Device {};
 struct LGFXBase {
   void init() {} void setRotation(int) {} void setBrightness(uint8_t) {} void fillScreen(int) {}
   template <typename T> void pushImage(int32_t, int32_t, int32_t, int32_t, const T*) {}
-  template <typename T> uint8_t getTouch(T*, T*, uint8_t = 0) { return 0; }
+  template <typename T> uint8_t getTouch(T*, T*, uint8_t = 0) { return g_touch ? 1 : 0; }
   void setFont(const GFXfont*) {} void setTextDatum(textdatum_t) {} void setTextColor(int) {}
   void drawString(const char*, int, int) {} uint16_t readPixel(int, int) { return 0; }
 };
