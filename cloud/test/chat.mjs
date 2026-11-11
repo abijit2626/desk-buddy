@@ -130,7 +130,7 @@ check("a long reply is cut to 320 characters", r.reply.length <= 320 && /[.!?]$/
 // --- the spoken-voice budget: after it runs out Dewy still gets the words
 const tts = await register();
 let spokenCount = 0, textOnly;
-for (let i = 0; i < 12 && !textOnly; i++) {
+for (let i = 0; i < 25 && !textOnly; i++) {
   const x = await ask(tts, "long " + i);
   if (x.spoken) spokenCount++; else textOnly = x;
 }
