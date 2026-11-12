@@ -61,6 +61,18 @@
   <!-- home -->
   <section id="tab-home" class="stack" aria-label="Home">
     <div class="card">
+      <div class="row between">
+        <div class="grow power-text"><h2 id="powerTitle">Dewy is on</h2><p class="small muted" id="powerHint">Awake, chatty and reminding you.</p></div>
+        <label class="switch"><input type="checkbox" role="switch" id="powerSwitch" aria-label="Dewy on" checked><span></span></label>
+      </div>
+    </div>
+
+    <div class="card" id="bondCard" hidden>
+      <div class="row between"><h2>Your bond</h2><span class="badge" id="bondLevel">Friend</span></div>
+      <div class="bond-bar" role="progressbar" aria-label="Bond with Dewy" aria-valuemin="0" aria-valuemax="100" id="bondBar"><i id="bondFill"></i></div>
+      <p class="small muted" id="bondHint">Pet, poke and pick Dewy up to grow closer.</p>
+    </div>
+    <div class="card">
       <div class="row between"><h2>Study timer</h2><span class="badge" id="timerBadge" hidden>Running</span></div>
       <div class="row between" id="timerIdle">
         <div class="stepper">

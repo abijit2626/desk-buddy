@@ -352,7 +352,7 @@ static void voiceBegin() {
 static bool voiceRequest(bool byWake) {
   if (!vReady || vState != V_IDLE || vRequested) return false;
   if (buddy.mood() == face::ALARM || buddy.faceDown()) return false;
-  if (fwProgress >= 0) return false;
+  if (fwProgress >= 0 || dewyResting) return false;   // switched off in the app: no talking
   if (WiFi.status() != WL_CONNECTED || !cloudOn() || !deviceToken[0]) return false;
   vCancel = false;
   vByWake = byWake;

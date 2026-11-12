@@ -74,7 +74,13 @@
 #define BATTERY_FULL_MV  4150      // 100%
 
 // ---------------- personality ----------------
-#define AFFECTION_FULL  300.0f     // points for "best friends": a pet is 1, a poke 0.2, a pick-up 0.1
+#define AFFECTION_FULL  300.0f     // points for a full bond (soulmate at 90%): a pet is 1, a poke 0.2, a pick-up 0.1
+// the bond (see bond.h): fades slowly after days apart, and Dewy misses you after a long time alone
+#define BOND_GRACE_DAYS     2         // days apart before the bond starts to fade
+#define BOND_FADE_PER_DAY   0.03f     // then this share of a full bond a day (never below half of what it was)
+#define BOND_MISS_AFTER_H   20        // hours alone before it starts to miss you
+#define BOND_WELCOME_AFTER_MIN 30     // minutes alone before it greets you when you come back
+#define REST_AWAKE_MS       (20UL * 1000UL)   // switched off in the app: a touch wakes it this long
 
 // 1 = quick timings for testing (bored after 20 s, asleep after 40 s).
 // 0 = real timings for the gift (bored after 30 min, asleep after 60 min).

@@ -77,6 +77,10 @@ input[type="text"], input[type="search"], input[type="time"], input[type="date"]
 textarea { resize: vertical; min-height: 84px; }
 input.code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 26px; letter-spacing: 0.18em; text-align: center; text-transform: uppercase; }
 
+/* bond */
+.bond-bar { height: 12px; border-radius: 999px; background: var(--line); overflow: hidden; margin: 10px 0 6px; }
+.bond-bar i { display: block; height: 100%; width: 0; border-radius: 999px; background: var(--pink); transition: width 400ms; }
+
 /* switch */
 .switch { position: relative; width: 52px; height: 32px; flex: none; }
 .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
@@ -143,3 +147,5 @@ nav.tabs button[aria-current="page"] { color: var(--pink-deep); }
 .results button { text-align: left; border: 1px solid var(--line); background: var(--bg); border-radius: 12px; font-weight: 700; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+.power-text { flex: 1 1 0; min-width: 0; }
+.row.between:has(.power-text) { flex-wrap: nowrap; }

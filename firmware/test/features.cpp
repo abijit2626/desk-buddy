@@ -37,6 +37,11 @@ int main() {
   shot("bday", [](Face& f) { f.birthday(false); }, 1800);
   shot("bday_own", [](Face& f) { f.birthday(true); }, 2600);
   shot("grow", [](Face& f) { f.setAffection(0.9f); run(f, 4000 - int(f.timeMs()) % 4000 + 400); }, 0);
+  shot("bond_welcome", [](Face& f) { f.setAffection(0.7f); f.bondMoment("Yay, it's you!", 4, 4500); }, 1400);
+  shot("bond_missed", [](Face& f) { f.setAffection(0.7f); f.bondMoment("I missed you so much!", 7, 6500); }, 1900);
+  shot("bond_levelup", [](Face& f) { f.setAffection(0.66f); f.bondMoment("Best friends forever!", 7, 6000); }, 2200);
+  shot("bond_missing", [](Face& f) { f.setAffection(0.5f); f.setMissing(true); f.bored(); run(f, 9000 - int(f.timeMs()) % 9000 + 1500); }, 0);
+  shot("resting_awake", [](Face& f) { f.resting = true; }, 800);
   shot("batt_low", [](Face& f) { f.setBattery(15); }, 1500);
   shot("batt_empty", [](Face& f) { f.setBattery(4); f.sleep(); }, 2000);
   shot("update", [](Face& f) { f.setUpdateProgress(0.45f); }, 1500);

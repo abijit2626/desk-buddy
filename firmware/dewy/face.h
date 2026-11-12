@@ -534,7 +534,7 @@ public:
     npk = k; if (npk < 8) pokes[npk++] = t;
     if (moodNow == ALARM) { snooze(); return; }
     if (moodNow == SLEEPY) { play1(SURPRISED, 1500, HAPPY); return; }
-    if (npk >= 5) { npk = 0; play1(ANNOYED, 4000, HAPPY); return; }
+    if (npk >= pokesToAnnoy) { npk = 0; play1(ANNOYED, 4000, HAPPY); return; }
     if (moodNow == ANNOYED) return;
     if (moodNow == BORED) play1(HAPPY);
     squintAt = t;
@@ -635,6 +635,21 @@ public:
   void setAffection(float a) { affection = clampf(a, 0, 1); }
   float affectionLevel() const { return affection; }
 
+  // ---- bond moments: a short message with hearts rising (hello again, a new bond level, coming back after days)
+  void bondMoment(const char* msg, int hearts, uint32_t ms = 5000) {
+    if (faceDownOn || upside) return;
+    asciiFold(msg ? msg : "", bondMsg, sizeof bondMsg);
+    bondAt = t; bondDur = float(ms < 2000 ? 2000 : ms);
+    bondHearts = hearts < 0 ? 0 : (hearts > MAX_BOND_HEARTS ? MAX_BOND_HEARTS : hearts);
+    eightAt = -1; remindAt = -1; weatherAt = -1;
+    play1(PETTED, uint32_t(bondDur * 0.6f), HAPPY);
+  }
+  // missing its person after a long time alone: a small grey heart droops now and then
+  void setMissing(bool on) { missing = on; }
+  bool isMissing() const { return missing; }
+  int pokesToAnnoy = 5;     // quick pokes in 3 s before it gets annoyed (a close buddy is more patient, up to 8)
+  bool resting = false;     // switched off in the app: it sleeps, and says so if you wake it
+
   // ---- battery percent (-1 = not measured). 20% or less: icon and tired eyes; 5% or less: "charge me"
   void setBattery(int pct) { battery = pct < 0 ? -1 : (pct > 100 ? 100 : pct); }
   int batteryPct() const { return battery; }
@@ -660,7 +675,8 @@ public:
   // something is on screen that shouldn't be cut short by falling asleep
   bool overlayActive() const {
     return bannerOn || (eightAt >= 0 && t < eightAt + 4200) || (noteAt >= 0 && t < noteAt + NOTE_MS) || (bdayAt >= 0 && t < bdayAt + 8000) ||
-           (remindAt >= 0 && t < remindAt + 6000) || (weatherAt >= 0 && t < weatherAt + weatherDur) || (breakAt >= 0 && t < breakAt + 5000) || updateP >= 0;
+           (remindAt >= 0 && t < remindAt + 6000) || (weatherAt >= 0 && t < weatherAt + weatherDur) || (breakAt >= 0 && t < breakAt + 5000) ||
+           (bondAt >= 0 && t < bondAt + bondDur) || updateP >= 0;
   }
 
   // ---- advance time ----
@@ -827,6 +843,8 @@ private:
   static const int NCONF = 40;
   Bit conf[NCONF];
   float affection = 0; int battery = -1; float updateP = -1;
+  static const int MAX_BOND_HEARTS = 8;
+  char bondMsg[40] = ""; float bondAt = -1, bondDur = 0; int bondHearts = 0; bool missing = false;
   bool bannerOn = false; float bannerAt = 0; char bTitle[40] = "", bLine[72] = "", bBig[24] = "";
 
   static float fade(float e, float dur, float in, float out) {
@@ -849,7 +867,7 @@ private:
     t -= R; blinkAt -= R; squintAt -= R; nextBlink -= R; nextGaze -= R; timerStart -= R;
     for (int i = 0; i < npk; i++) pokes[i] -= R;
     for (int i = 0; i < nq; i++) q[i].at -= R;
-    float* ev[] = { &eightAt, &weatherAt, &breakAt, &remindAt, &noteAt, &bdayAt };
+    float* ev[] = { &eightAt, &weatherAt, &breakAt, &remindAt, &noteAt, &bdayAt, &bondAt };
     for (float* e : ev) if (*e >= 0) *e = fmaxf(-1, *e - R);   // anything that old has finished anyway
   }
 
@@ -959,11 +977,39 @@ private:
       }
     }
 
-    // grows a personality: once it's fond of you, a little heart floats up now and then
-    if (affection >= 0.5f && awake) {
-      float ph = fmodf(t, 4000);
-      if (ph < 1300) { float k = ph / 1300; fillHeart(cv, 26, 48 - k * 14, 15, acc, (1 - k) * clampf((affection - 0.4f) / 0.6f, 0, 1)); }
+    // grows a personality: once it's fond of you, a little heart floats up now and then, more often the closer you are
+    bool bondShowing = bondAt >= 0 && t < bondAt + bondDur;
+    if (affection >= 0.35f && awake && !bondShowing) {
+      float period = 4500 - 2000 * clampf((affection - 0.35f) / 0.65f, 0, 1);
+      float ph = fmodf(t, period);
+      if (ph < 1300) { float k = ph / 1300; fillHeart(cv, 26, 48 - k * 14, 15, acc, (1 - k) * clampf((affection - 0.25f) / 0.6f, 0, 1)); }
     }
+
+    // missing you: a small grey heart droops by its cheek every so often, with a quiet "miss you..."
+    if (missing && awake && !bondShowing && !overlayActive()) {
+      float ph = fmodf(t, 9000);
+      if (ph < 3000) {
+        float a = fade(ph, 3000, 500, 800);
+        const RGB grey = hex(0x8A8F99);
+        fillHeart(cv, 294, 40 + ph / 3000 * 10, 13, grey, 0.8f * a);
+        say(cv, TEXT_SMALL, "miss you...", 160, 228, 1, grey, 0.75f * a);
+      }
+    }
+
+    // bond moment: hearts rise across the screen, with a message along the bottom
+    if (bondShowing) {
+      float e = t - bondAt, a = fade(e, bondDur, 250, 600);
+      for (int i = 0; i < bondHearts; i++) {
+        float start = i * 260.f, k = (e - start) / 2200.f;
+        if (k < 0 || k > 1) continue;
+        float x = 40 + (i * 37) % 240 + sinf((e + i * 500) / 300) * 6;
+        fillHeart(cv, x, 230 - k * 190, 12 + (i % 3) * 4, acc, (1 - k) * a);
+      }
+      if (bondMsg[0]) say(cv, TEXT_MEDIUM, bondMsg, 160, 226, 1, acc, a);
+    }
+
+    // switched off in the app, woken by a touch: say so quietly
+    if (resting && awake && !bondShowing) say(cv, TEXT_SMALL, "resting - turn me on in the app", 160, 228, 1, eye, 0.6f);
 
     // battery
     if (battery >= 0 && battery <= 20) {

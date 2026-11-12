@@ -33,6 +33,7 @@
 #include "face.h"
 #include "motion.h"
 #include "types.h"
+#include "bond.h"
 
 static LGFX tft;
 static face::Face buddy;
@@ -119,7 +120,8 @@ static void drawFrame() {
   lastFrame = now;
   buddy.update(dt);
 
-  float target = buddy.faceDown() ? 0 : (buddy.mood() == face::SLEEPY ? BRIGHTNESS_ASLEEP : BRIGHTNESS_AWAKE);
+  bool asleep = buddy.mood() == face::SLEEPY;
+  float target = (buddy.faceDown() || (asleep && buddy.resting)) ? 0 : (asleep ? BRIGHTNESS_ASLEEP : BRIGHTNESS_AWAKE);
   brightness += (target - brightness) * 0.08f;
   tft.setBrightness(uint8_t(brightness + 0.5f));
   if (buddy.faceDown() && brightness < 0.5f) return;   // lying on its face with the light off: nothing to draw
@@ -134,18 +136,33 @@ static void drawFrame() {
   tft.pushImage(0, 0, face::W, face::H, (lgfx::swap565_t*)canvas.fb);
 }
 
-// ---------------- personality (saved in flash) ----------------
+// ---------------- personality: the bond grows with pets, pokes and pick-ups (saved in flash, see bond.h) ----------------
 static float affPoints = 0;
 static bool affDirty = false;
+static float bondBase = 0;        // bond points the last time you were together (fading starts from here)
+static uint32_t seenEpoch = 0;    // real time you were last together, 0 = not known yet
+static int levelUpTo = -1;        // a new bond level waiting to be celebrated
+static float bondNow() { return fminf(1.f, affPoints / AFFECTION_FULL); }
+static void applyBond() {
+  float a = bondNow();
+  buddy.setAffection(a);
+  buddy.pokesToAnnoy = bond::levelOf(a) >= bond::BEST ? 8 : 5;   // a close buddy puts up with more poking
+}
 static void addAffection(float p) {
+  bond::Level before = bond::levelOf(bondNow());
   affPoints += p; affDirty = true;
-  buddy.setAffection(fminf(1.f, affPoints / AFFECTION_FULL));
+  bondBase = affPoints;
+  applyBond();
+  bond::Level after = bond::levelOf(bondNow());
+  if (after > before && p > 0) levelUpTo = after;
 }
 static void saveAffection(uint32_t now, bool force = false) {
   static uint32_t last = 0;
   if (!affDirty || (!force && now - last < 5UL * 60UL * 1000UL)) return;
   last = now; affDirty = false;
   prefs.putFloat("aff", affPoints);
+  prefs.putFloat("bbase", bondBase);
+  prefs.putUInt("seen", seenEpoch);
 }
 
 // ---------------- which way up it is (needs "cal up" and "cal face" once) ----------------
@@ -173,6 +190,21 @@ static void loadCalibration() {
 }
 
 static void interacted() { lastInteract = millis(); }
+
+// Someone touched or picked Dewy up. Coming back after a while gets a welcome (see checkBond).
+static uint32_t welcomeAt = 0; static float welcomeHours = 0;
+static void personHere(uint32_t now) {
+  int32_t idle = int32_t(now - lastInteract);
+  double hours = idle > 0 ? idle / 3600000.0 : 0;
+  if (clockIsReal && seenEpoch) {                      // the real clock also counts time it was switched off
+    double realH = (double(time(nullptr)) - double(seenEpoch)) / 3600.0;
+    if (realH > hours) hours = realH;
+  }
+  if (hours * 60 >= BOND_WELCOME_AFTER_MIN && !buddy.resting) { welcomeAt = now + 1700; welcomeHours = float(hours); }
+  if (clockIsReal) { seenEpoch = uint32_t(time(nullptr)); bondBase = affPoints; affDirty = true; }
+  if (buddy.isMissing()) buddy.setMissing(false);
+  interacted();
+}
 
 static void pollOrientation(uint32_t now) {
   static uint32_t last = 0, downSince = 0, liftSince = 0, flipSince = 0;
@@ -402,7 +434,7 @@ static void checkCalendar(uint32_t now) {
   bool freeNow = buddy.mood() == face::HAPPY && !buddy.faceDown() && !buddy.upsideDown() && !buddy.busy() && !buddy.overlayActive();
 
   // reminders, only during the day
-  bool day = tmv.tm_hour >= S.from && tmv.tm_hour < S.to;
+  bool day = tmv.tm_hour >= S.from && tmv.tm_hour < S.to && !buddy.resting;   // switched off: no nudges
   if (S.water > 0 && now - lastWater > S.water * 60000UL) {
     if (!day || buddy.mood() == face::SLEEPY || buddy.faceDown()) lastWater = now;   // skipped
     else if (freeNow) { lastWater = now; buddy.remind(face::REMIND_WATER); Serial.println("[remind] water"); }
@@ -455,6 +487,7 @@ static void printHelp() {
   Serial.println("Features: 8ball, weather sun|cloud|rain|off|show, timer [minutes] | timer stop,");
   Serial.println("          remind water|stretch, note <text>, bday [own], battery <0-100>|auto,");
   Serial.println("          affection <0-1>, tilt <x> <y>|off, facedown on|off, upside on|off");
+  Serial.println("Bond:     bond (level and progress), rest on|off (as if switched off in the app), miss on|off");
   Serial.println("Setup:    cal up, cal face, axes, wifi, wifi reset, setup, pair");
 }
 
@@ -520,6 +553,13 @@ static void handleCommand(String raw) {
     if (v == "auto") { simBattery = -1; buddy.setBattery(-1); Serial.println("battery: measured again"); }
     else { simBattery = int(v.toInt()); buddy.setBattery(simBattery); if (simBattery <= 5) buddy.sleep(); Serial.printf("battery: pretending %d%%\n", simBattery); }
   }
+  else if (cmd == "bond") {
+    float a = bondNow();
+    Serial.printf("bond %.2f: %s, %d%% of the way to the next level, %u pts (base %.1f), last together %u\n",
+                  a, bond::NAMES[bond::levelOf(a)], int(bond::progressIn(a) * 100), unsigned(affPoints), bondBase, unsigned(seenEpoch));
+  }
+  else if (cmd == "rest on" || cmd == "rest off") { S.powerOn = cmd == "rest off"; Serial.println(S.powerOn ? "switched on (until the app changes a setting)" : "resting (until the app changes a setting)"); }
+  else if (cmd == "miss on" || cmd == "miss off") buddy.setMissing(cmd == "miss on");
   else if (cmd.startsWith("affection ")) {
     float a = face::clampf(cmd.substring(10, cmd.length()).toFloat(), 0, 1);
     affPoints = a * AFFECTION_FULL; addAffection(0); saveAffection(millis(), true);
@@ -588,7 +628,7 @@ static void pollTouch(uint32_t now) {
   bool down = tft.getTouch(&x, &y) > 0;
   if (down) {
     lastSeen = now;
-    if (!touching) { touching = true; petting = false; downAt = now; interacted(); }
+    if (!touching) { touching = true; petting = false; downAt = now; personHere(now); }
     else if (!petting && now - downAt > PET_HOLD_MS && buddy.mood() != face::ALARM) { petting = true; buddy.petStart(); addAffection(1); interacted(); }
   } else if (touching && now - lastSeen > 60) {        // released (with a little debounce)
     touching = false;
@@ -626,7 +666,7 @@ static void pollMotion(uint32_t now) {
     return;
   }
   if (e == Motion::SHAKE) buddy.shake();
-  else { buddy.pickUp(); addAffection(0.1f); }                    // also wakes it up if asleep
+  else { personHere(now); buddy.pickUp(); addAffection(0.1f); }   // also wakes it up if asleep
 }
 
 static void checkIdle(uint32_t now) {
@@ -637,6 +677,59 @@ static void checkIdle(uint32_t now) {
   bool hold = buddy.busy() || buddy.overlayActive() || buddy.timerActive();
   if (buddy.mood() == face::HAPPY && idle > BORED_AFTER_MS && !hold) buddy.bored();
   else if (buddy.mood() == face::BORED && idle > SLEEP_AFTER_MS && !hold) buddy.sleep();
+}
+
+// ---------------- the bond over time: welcomes, new levels, missing you, fading after days apart ----------------
+static void checkBond(uint32_t now) {
+  bool free = !buddy.busy() && !buddy.overlayActive() && !buddy.faceDown() && !buddy.upsideDown() &&
+              buddy.mood() != face::ALARM && vState == V_IDLE && !vRequested;
+  bond::Level lvl = bond::levelOf(bondNow());
+
+  if (welcomeAt && int32_t(now - welcomeAt) >= 0) {
+    if (free) {
+      welcomeAt = 0;
+      int hearts = bond::welcomeHearts(lvl, welcomeHours);
+      const char* msg = bond::welcomeText(lvl, welcomeHours);
+      if (hearts > 0 || msg[0]) { buddy.bondMoment(msg, hearts, welcomeHours >= 24 ? 6500 : 4500); Serial.printf("[bond] welcome back (%.1f h away)\n", welcomeHours); }
+    } else if (int32_t(now - welcomeAt) > 15000) welcomeAt = 0;   // too busy for too long: skip it
+  }
+  if (levelUpTo >= 0 && free && !welcomeAt) {
+    buddy.bondMoment(bond::levelUpText(bond::Level(levelUpTo)), 6 + levelUpTo / 2, 6000);
+    Serial.printf("[bond] now %s\n", bond::NAMES[levelUpTo]);
+    levelUpTo = -1;
+  }
+
+  static uint32_t last = 0;
+  if (now - last < 60000 && last) return;
+  last = now;
+  bondReport = int(bondNow() * 1000 + 0.5f);
+
+  // missing you after a long time with nobody around (not while switched off)
+  int32_t idle = int32_t(now - lastInteract);
+  bool miss = !buddy.resting && lvl >= bond::FRIEND && idle > int32_t(BOND_MISS_AFTER_H * 3600000UL);
+  if (miss != buddy.isMissing()) buddy.setMissing(miss);
+
+  // fading after days apart, counted on the real clock. Paused while switched off in the app.
+  if (!clockIsReal) return;
+  uint32_t nowEpoch = uint32_t(time(nullptr));
+  if (!seenEpoch || buddy.resting) { seenEpoch = nowEpoch; bondBase = affPoints; affDirty = true; return; }
+  double days = (double(nowEpoch) - double(seenEpoch)) / 86400.0;
+  float f = bond::faded(bondBase, AFFECTION_FULL, days, BOND_GRACE_DAYS, BOND_FADE_PER_DAY);
+  if (f < affPoints - 0.01f) { affPoints = f; applyBond(); affDirty = true; Serial.printf("[bond] faded to %.2f after %.1f days apart\n", bondNow(), days); }
+}
+
+// ---------------- switched off in the app: rest until switched on again ----------------
+static void checkRest(uint32_t now) {
+  bool rest = !S.powerOn;
+  if (rest != buddy.resting) {
+    buddy.resting = rest; dewyResting = rest;
+    if (rest) { buddy.setMissing(false); welcomeAt = 0; if (buddy.mood() != face::ALARM) buddy.sleep(); Serial.println("[power] switched off in the app: resting"); }
+    else { buddy.wake(); interacted(); Serial.println("[power] switched on in the app"); }
+    return;
+  }
+  if (!rest || buddy.mood() == face::SLEEPY || buddy.mood() == face::ALARM) return;
+  bool hold = buddy.busy() || buddy.overlayActive() || buddy.timerActive() || vState != V_IDLE;
+  if (!hold && int32_t(now - lastInteract) > int32_t(REST_AWAKE_MS)) buddy.sleep();   // back to sleep after a touch
 }
 
 // ---------------- setup and loop ----------------
@@ -680,7 +773,9 @@ void setup() {
   buddy.onMood = printMood;
   buddy.begin(esp_random());
   affPoints = prefs.getFloat("aff", 0);
-  addAffection(0); affDirty = false;
+  bondBase = prefs.getFloat("bbase", affPoints);
+  seenEpoch = prefs.getUInt("seen", 0);
+  applyBond(); affDirty = false;
 
   startWifi();
   voiceBegin();
@@ -700,6 +795,8 @@ void loop() {
   pollBattery(now);
   checkCalendar(now);
   checkIdle(now);
+  checkRest(now);
+  checkBond(now);
   saveAffection(now);
   if (now - lastFrame >= FRAME_MS) drawFrame();
 }

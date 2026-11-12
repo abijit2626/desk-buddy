@@ -22,6 +22,7 @@ struct DewySettings {
   uint16_t study;
   uint8_t bdM, bdD;
   uint16_t gY; uint8_t gM, gD;
+  bool powerOn;                   // false = switched off in the app: Dewy rests until switched on
 };
 static DewySettings S;            // the main loop's copy
 
@@ -34,6 +35,7 @@ static void settingsDefaults() {
   S.study = STUDY_MINUTES;
   S.bdM = BIRTHDAY_MONTH; S.bdD = BIRTHDAY_DAY;
   S.gY = GIFT_YEAR; S.gM = GIFT_MONTH; S.gD = GIFT_DAY;
+  S.powerOn = true;
 }
 
 // The server already checks everything; this is a second, defensive check.
@@ -62,6 +64,7 @@ static bool settingsFromJson(const char* json) {
   n.study = constrain(int(d["studyMinutes"] | 25), 1, 180);
   n.bdM = d["birthday"]["month"] | 0; n.bdD = d["birthday"]["day"] | 0;
   n.gY = d["giftDate"]["year"] | 0; n.gM = d["giftDate"]["month"] | 0; n.gD = d["giftDate"]["day"] | 0;
+  n.powerOn = d["powerOn"] | true;         // older settings without the switch mean "on"
   S = n;
   return true;
 }
@@ -86,6 +89,8 @@ static volatile int ackId = 0;               // the newest event the face has ha
 static volatile bool wantPair = false;       // ask for a new pairing code now
 static volatile bool updateAllowed = false;  // a firmware update may start (nothing important on screen)
 static volatile bool dewyAsleep = false;     // check in less often while asleep
+static volatile bool dewyResting = false;    // switched off in the app: no voice, no reminders
+static volatile int bondReport = -1;         // bond 0..1000 for the phone app, -1 = not known yet
 static volatile float cityLat = 0, cityLon = 0;
 static volatile bool cityOn = false;
 // network task -> main loop
@@ -154,8 +159,10 @@ static bool cloudRegister() {
 }
 
 static void cloudSync() {
-  char path[96];
-  snprintf(path, sizeof path, "/api/device/sync?rev=%d&ack=%d", knownRev, int(ackId));
+  char path[112];
+  int b = bondReport;
+  if (b >= 0) snprintf(path, sizeof path, "/api/device/sync?rev=%d&ack=%d&bond=%d", knownRev, int(ackId), b);
+  else snprintf(path, sizeof path, "/api/device/sync?rev=%d&ack=%d", knownRev, int(ackId));
   JsonDocument d;
   int code = httpsJson("GET", String(DEWY_SERVER) + path, nullptr, &d);
   if (code == 401) {                         // the server doesn't know this Dewy any more: start over
