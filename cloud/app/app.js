@@ -302,6 +302,7 @@ function fillSelects() {
   const opt = (v, t) => el("option", { value: v, text: t });
   const every = [[0, "Off"], [30, "Every 30 minutes"], [45, "Every 45 minutes"], [60, "Every hour"], [90, "Every 1½ hours"], [120, "Every 2 hours"], [180, "Every 3 hours"]];
   for (const id of ["remWater", "remStretch"]) $(id).replaceChildren(...every.map(([v, t]) => opt(v, t)));
+  $("snoozeLen").replaceChildren(...[5, 9, 10, 15, 20, 30].map((m) => opt(m, m + " minutes")));
   const hour = (h) => (h === 0 || h === 24 ? "12 am" : h < 12 ? h + " am" : h === 12 ? "12 pm" : h - 12 + " pm");
   $("remFrom").replaceChildren(...Array.from({ length: 24 }, (_, h) => opt(h, hour(h))));
   $("remTo").replaceChildren(...Array.from({ length: 24 }, (_, i) => opt(i + 1, i + 1 === 24 ? "midnight" : hour(i + 1))));
@@ -321,6 +322,8 @@ function renderReminders() {
   ensureOption($("remStretch"), r.stretch, "Every " + r.stretch + " minutes");
   $("remFrom").value = String(r.from); $("remTo").value = String(r.to);
   ensureOption($("studyLen"), draft.studyMinutes, draft.studyMinutes + " minutes");
+  const snooze = draft.snoozeMinutes ?? 9;
+  ensureOption($("snoozeLen"), snooze, snooze + " minutes");
 }
 
 // more
@@ -438,6 +441,7 @@ function wire() {
     changed();
   };
   for (const id of ["remWater", "remStretch", "remFrom", "remTo"]) $(id).addEventListener("change", remind);
+  $("snoozeLen").addEventListener("change", () => { draft.snoozeMinutes = Number($("snoozeLen").value); changed(); });
   $("studyLen").addEventListener("change", () => { draft.studyMinutes = Number($("studyLen").value); minutes = draft.studyMinutes; renderTimer(); changed(); });
 
   $("setName").addEventListener("input", () => { const v = $("setName").value.trim(); if (v) { draft.name = v.slice(0, 20); renderStatus(); changed(); } });

@@ -406,6 +406,47 @@ static void pollCloud(uint32_t now) {
   dewyAsleep = m == face::SLEEPY;
 }
 
+// ---------------- the alarm: rings until you stop it; snooze rings again later ----------------
+// Snooze: say "snooze", tap the screen, or shake or lift Dewy. Stop: say "stop", or hold a finger on the screen.
+// With no speaker (or before it's wired) the alarm is just the face, and the touches still work.
+static bool ringing = false;
+static uint32_t ringSince = 0, snoozeAt = 0;
+static void alarmStart() {
+  ringing = true; ringSince = millis(); alarmHeard = ALARM_NONE;
+  alarmRinging = vReady;                                     // the voice task beeps and listens
+  buddy.setMood(face::ALARM); interacted();
+  Serial.printf("[alarm] %s\n", buddy.alarmText);
+}
+static void alarmSnooze() {
+  if (!ringing) return;
+  ringing = false; alarmRinging = false;
+  int mins = S.snoozeMin >= 1 && S.snoozeMin <= 30 ? S.snoozeMin : 9;
+  snoozeAt = millis() + uint32_t(mins) * 60000UL; if (!snoozeAt) snoozeAt = 1;
+  buddy.setMood(face::HAPPY);
+  static char msg[24];
+  snprintf(msg, sizeof msg, "Snoozing %d min", mins);
+  buddy.bondMoment(msg, 0, 2500);
+  Serial.printf("[alarm] snoozed for %d minutes\n", mins);
+}
+static void alarmStop(bool timedOut = false) {
+  if (!ringing && !snoozeAt) return;
+  bool wasRinging = ringing;
+  ringing = false; alarmRinging = false; snoozeAt = 0;
+  buddy.setMood(face::HAPPY);
+  time_t tnow = time(nullptr); struct tm tmv; localtime_r(&tnow, &tmv);
+  bool morning = clockIsReal && tmv.tm_hour >= 4 && tmv.tm_hour < 12;
+  if (wasRinging && !timedOut) buddy.bondMoment(morning ? "Good morning!" : "Alarm off", morning ? 3 : 0, 3000);
+  Serial.println(timedOut ? "[alarm] stopped by itself after ringing a while" : "[alarm] stopped");
+}
+static void checkAlarmRing(uint32_t now) {
+  if (snoozeAt && !ringing && int32_t(now - snoozeAt) >= 0) { snoozeAt = 0; alarmStart(); }
+  if (!ringing) return;
+  int heard = alarmHeard;
+  if (heard) { alarmHeard = ALARM_NONE; if (heard == ALARM_SNOOZE) alarmSnooze(); else alarmStop(); return; }
+  if (buddy.mood() != face::ALARM && !buddy.faceDown()) buddy.setMood(face::ALARM);   // nothing else may take the face while it rings
+  if (now - ringSince > ALARM_RING_MAX_MS) alarmStop(true);
+}
+
 // ---------------- alarms, birthdays and reminders ----------------
 static void checkCalendar(uint32_t now) {
   static uint32_t last = 0, lastWater = 0, lastStretch = 0;
@@ -426,8 +467,8 @@ static void checkCalendar(uint32_t now) {
       static char alarmText[8];
       snprintf(alarmText, sizeof alarmText, "%02d:%02d", a.h, a.m);
       buddy.alarmText = alarmText;
-      buddy.alarm(); interacted();
-      Serial.printf("[alarm] %s\n", alarmText);
+      snoozeAt = 0;                                          // a new alarm replaces a snoozed one
+      alarmStart();
     }
   }
 
@@ -483,6 +524,7 @@ static void printMood(face::Mood m, void*) {
 
 static void printHelp() {
   Serial.println("Moods:    shake, pick, name, listen, think, talk, pet, poke, ignore, bored, sleep, wake,");
+  Serial.println("Alarm:    alarm (ring now), snooze, alarm stop. Ringing: say snooze or stop, tap = snooze, hold = stop");
   Serial.println("          alarm, time, happy, annoyed, colour, cat, acorn, mouth, settime HH:MM");
   Serial.println("Features: 8ball, weather sun|cloud|rain|off|show, timer [minutes] | timer stop,");
   Serial.println("          remind water|stretch, note <text>, bday [own], battery <0-100>|auto,");
@@ -511,7 +553,9 @@ static void handleCommand(String raw) {
   else if (cmd == "bored") buddy.bored();
   else if (cmd == "sleep") buddy.sleep();
   else if (cmd == "wake") buddy.wake();
-  else if (cmd == "alarm") buddy.alarm();
+  else if (cmd == "alarm") alarmStart();
+  else if (cmd == "snooze") alarmSnooze();
+  else if (cmd == "alarm stop") alarmStop();
   else if (cmd == "time") buddy.showTime();
   else if (cmd == "happy" || cmd == "reset") buddy.reset();
   else if (cmd == "annoyed") buddy.setMood(face::ANNOYED);
@@ -621,7 +665,7 @@ static void pollSerial() {
 
 static void pollTouch(uint32_t now) {
 #if TOUCH_ENABLED
-  static bool touching = false, petting = false;
+  static bool touching = false, petting = false, swallow = false;
   static uint32_t downAt = 0, lastSeen = 0;
   if (buddy.faceDown()) return;
   int32_t x, y;
@@ -629,11 +673,14 @@ static void pollTouch(uint32_t now) {
   if (down) {
     lastSeen = now;
     if (!touching) { touching = true; petting = false; downAt = now; personHere(now); }
-    else if (!petting && now - downAt > PET_HOLD_MS && buddy.mood() != face::ALARM) { petting = true; buddy.petStart(); addAffection(1); interacted(); }
+    else if (ringing && now - downAt > ALARM_HOLD_STOP_MS) { swallow = true; alarmStop(); return; }   // hold = stop the alarm
+    else if (!petting && now - downAt > PET_HOLD_MS && !ringing && buddy.mood() != face::ALARM) { petting = true; buddy.petStart(); addAffection(1); interacted(); }
   } else if (touching && now - lastSeen > 60) {        // released (with a little debounce)
     touching = false;
     interacted();
+    if (swallow) { swallow = false; return; }               // the hold that stopped the alarm: not a tap
     if (petting) buddy.petEnd();
+    else if (ringing) alarmSnooze();                        // a tap while it rings = snooze
     else if (lastSeen - downAt < TAP_MAX_MS) {
       if (buddy.bannerShown()) { bannerHiddenUntil = now + 30UL * 60UL * 1000UL; setBanner(BANNER_NONE); return; }   // a tap hides the set-up card
       static uint32_t noVoiceUntil = 0;                       // after a poking burst, taps don't start a conversation for a while
@@ -659,7 +706,7 @@ static void pollMotion(uint32_t now) {
   Motion::Event e = motion.poll(now);
   if (e == Motion::NONE || buddy.faceDown()) return;        // lying on its face: ignore bumps
   interacted();
-  if (buddy.mood() == face::ALARM) { buddy.snooze(); return; }   // shake or lift to snooze
+  if (ringing) { alarmSnooze(); return; }                   // shake or lift to snooze
   if (e == Motion::SHAKE && lastTapAt && now - lastTapAt < EIGHT_BALL_WINDOW_MS) {
     lastTapAt = 0; buddy.eightBall();
     Serial.printf("[8-ball] %s\n", buddy.eightBallAnswer());
@@ -795,6 +842,7 @@ void loop() {
   pollBattery(now);
   checkCalendar(now);
   checkIdle(now);
+  checkAlarmRing(now);
   checkRest(now);
   checkBond(now);
   saveAffection(now);

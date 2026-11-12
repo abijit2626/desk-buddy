@@ -23,6 +23,7 @@ struct DewySettings {
   uint8_t bdM, bdD;
   uint16_t gY; uint8_t gM, gD;
   bool powerOn;                   // false = switched off in the app: Dewy rests until switched on
+  uint8_t snoozeMin;              // minutes a snoozed alarm waits before ringing again
 };
 static DewySettings S;            // the main loop's copy
 
@@ -36,6 +37,7 @@ static void settingsDefaults() {
   S.bdM = BIRTHDAY_MONTH; S.bdD = BIRTHDAY_DAY;
   S.gY = GIFT_YEAR; S.gM = GIFT_MONTH; S.gD = GIFT_DAY;
   S.powerOn = true;
+  S.snoozeMin = 9;
 }
 
 // The server already checks everything; this is a second, defensive check.
@@ -65,6 +67,7 @@ static bool settingsFromJson(const char* json) {
   n.bdM = d["birthday"]["month"] | 0; n.bdD = d["birthday"]["day"] | 0;
   n.gY = d["giftDate"]["year"] | 0; n.gM = d["giftDate"]["month"] | 0; n.gD = d["giftDate"]["day"] | 0;
   n.powerOn = d["powerOn"] | true;         // older settings without the switch mean "on"
+  n.snoozeMin = d["snoozeMinutes"] | 9;
   S = n;
   return true;
 }

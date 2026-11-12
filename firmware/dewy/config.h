@@ -80,6 +80,8 @@
 #define BOND_FADE_PER_DAY   0.03f     // then this share of a full bond a day (never below half of what it was)
 #define BOND_MISS_AFTER_H   20        // hours alone before it starts to miss you
 #define BOND_WELCOME_AFTER_MIN 30     // minutes alone before it greets you when you come back
+#define ALARM_RING_MAX_MS  (10UL * 60UL * 1000UL)   // an alarm nobody answers stops by itself after this
+#define ALARM_HOLD_STOP_MS 1500                      // hold a finger on the screen this long to stop the alarm
 #define REST_AWAKE_MS       (20UL * 1000UL)   // switched off in the app: a touch wakes it this long
 
 // 1 = quick timings for testing (bored after 20 s, asleep after 40 s).

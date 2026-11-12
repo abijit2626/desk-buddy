@@ -525,7 +525,7 @@ public:
   void sleep()    { play1(SLEEPY); }
   void wake()     { if (moodNow == SLEEPY) play1(HAPPY); else { Step s[] = { { SLEEPY, 1800 }, { HAPPY, 0 } }; play(s, 2); } }
   void alarm()    { play1(ALARM, 8000, HAPPY); }
-  void showTime() { play1(CLOCK, 5000, HAPPY); }
+  void showTime(uint32_t ms = 5000) { play1(CLOCK, ms, HAPPY); }
   void reset()    { play1(HAPPY); }
   void snooze()   { play1(HAPPY); }
   void poke() {

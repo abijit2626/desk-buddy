@@ -23,10 +23,10 @@ async function register() {
 }
 
 // Sends a question; returns the answer as text plus whether it came back as a spoken WAV.
-async function chat(token, body, type = "application/json") {
+async function chat(token, body, type = "application/json", extra = {}) {
   const r = await fetch(BASE + "/api/device/chat", {
     method: "POST",
-    headers: { ...(token ? { authorization: "Bearer " + token } : {}), "content-type": type },
+    headers: { ...(token ? { authorization: "Bearer " + token } : {}), "content-type": type, ...extra },
     body: type === "application/json" && typeof body !== "string" ? JSON.stringify(body) : body,
   });
   const ct = r.headers.get("content-type") || "";
@@ -36,6 +36,7 @@ async function chat(token, body, type = "application/json") {
       status: r.status, wav: bytes, spoken: true,
       heard: decodeURIComponent(r.headers.get("x-dewy-heard") || ""),
       reply: decodeURIComponent(r.headers.get("x-dewy-reply") || ""),
+      show: r.headers.get("x-dewy-show"),
     };
   }
   const data = await r.json().catch(() => null);
@@ -162,6 +163,36 @@ for (let i = 0; i < 45; i++) {
 check("45 silent recordings in a day are all answered in words, none refused", silentOk);
 r = await ask(quiet, "hi there");
 check("and a real question afterwards still works (nothing was used up)", r.status === 200 && r.spoken === true, r);
+
+// --- "what time is it?" shows the clock; a timer doesn't
+const clk = await register();
+r = await ask(clk, "what time is it");
+check("a time question asks Dewy to show its clock", r.spoken && r.show === "clock", r);
+r = await ask(clk, "tell me a joke");
+check("other questions don't", r.spoken && !r.show, r);
+r = await ask(clk, "start a 5 minute timer");
+check("a timer is not the time", r.spoken && !r.show, r);
+
+// --- while the alarm rings: snooze or stop, nothing spoken, no question counted
+const al = await register();
+const alarmSays = (text) => chat(al, { text }, "application/json", { "x-dewy-context": "alarm" });
+r = await alarmSays("snooze");
+check("\"snooze\" while the alarm rings snoozes it", r.status === 200 && r.action === "snooze" && !r.spoken, r);
+r = await alarmSays("five more minutes please");
+check("\"five more minutes\" snoozes too", r.action === "snooze", r);
+r = await alarmSays("stop");
+check("\"stop\" stops it", r.action === "stop", r);
+r = await alarmSays("okay I'm up");
+check("\"I'm up\" stops it", r.action === "stop", r);
+r = await alarmSays("what's the weather");
+check("anything else does nothing", r.status === 200 && r.action === null, r);
+r = await chat(al, paddedAudio("snooze"), "audio/pcm", { "x-dewy-context": "alarm" });
+check("it works from the mic's audio too", r.action === "snooze", r);
+let alarmOk = true;
+for (let i = 0; i < 45; i++) { const x = await alarmSays("stop"); if (x.action !== "stop") alarmOk = false; }
+check("45 alarm words in a day are all handled", alarmOk);
+r = await ask(al, "hi there");
+check("and they didn't use up any questions", r.status === 200 && r.spoken === true, r);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

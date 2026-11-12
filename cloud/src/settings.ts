@@ -19,6 +19,7 @@ export interface Settings {
   birthday: { month: number; day: number } | null;
   giftDate: { year: number; month: number; day: number } | null;
   powerOn: boolean;    // false = switched off in the app: Dewy rests (dark, quiet) until switched on
+  snoozeMinutes: number;  // how long a snoozed alarm waits before ringing again
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -31,6 +32,7 @@ export const DEFAULT_SETTINGS: Settings = {
   birthday: null,
   giftDate: null,
   powerOn: true,
+  snoozeMinutes: 9,
 };
 
 export const LIMITS = { alarms: 10, name: 20, label: 24, city: 40 };
@@ -110,13 +112,15 @@ export function validateSettings(input: unknown): Result<Settings> {
   // older saved settings (and older apps) don't have the switch: that means "on"
   if (s.powerOn !== undefined && typeof s.powerOn !== "boolean") return { ok: false, error: "powerOn: true or false" };
   const powerOn = s.powerOn !== false;
+  if (s.snoozeMinutes !== undefined && !isInt(s.snoozeMinutes, 1, 30)) return { ok: false, error: "snoozeMinutes: 1-30" };
+  const snoozeMinutes = s.snoozeMinutes === undefined ? 9 : (s.snoozeMinutes as number);
 
   return {
     ok: true,
     value: {
       name, timezone: s.timezone, city, alarms,
       reminders: { water: r.water as number, stretch: r.stretch as number, from: r.from as number, to: r.to as number },
-      studyMinutes: s.studyMinutes as number, birthday, giftDate, powerOn,
+      studyMinutes: s.studyMinutes as number, birthday, giftDate, powerOn, snoozeMinutes,
     },
   };
 }

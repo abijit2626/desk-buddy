@@ -39,6 +39,9 @@
 #ifndef MIC_SHIFT
 #define MIC_SHIFT 14      // bigger = quieter mic
 #endif
+#ifndef ALARM_VOLUME
+#define ALARM_VOLUME 70   // the alarm's loudest beep, 0 to 100. It starts at about a third of this and gets louder over a minute
+#endif
 #ifndef VOICE_VOLUME
 #define VOICE_VOLUME 80   // speaker volume, 0 to 100
 #endif
@@ -57,6 +60,7 @@ static volatile bool vCancel = false;       // the main loop asks the voice task
 static uint32_t vTapAt = 0;                 // when a double-tap last started a turn (main loop only)
 static char vNotice[128] = "";              // something to show on screen after a turn that went wrong, written by the voice task
 static volatile bool vNoticeNew = false;
+static volatile bool vShowClock = false;    // the question was about the time: show the clock after the answer
 static NoiseTracker noiseTrack;             // the room's background level while idle (voice task only)
 static bool micOk = false, vReady = false;
 static bool micTest = (MIC_TEST != 0);
@@ -266,8 +270,8 @@ static bool talkToCloud(int nSamples) {
   http.addHeader("Authorization", String("Bearer ") + deviceToken);
   http.addHeader("Content-Type", "audio/pcm");
   http.addHeader("X-Dewy-Version", DEWY_VERSION);
-  const char* keys[] = { "x-dewy-heard", "x-dewy-reply", "Content-Type", "Transfer-Encoding" };
-  http.collectHeaders(keys, 4);
+  const char* keys[] = { "x-dewy-heard", "x-dewy-reply", "Content-Type", "Transfer-Encoding", "x-dewy-show" };
+  http.collectHeaders(keys, 5);
   uint32_t t0 = millis();
   int code = http.POST((uint8_t*)recBuf, (size_t)nSamples * 2);
   if (code != 200) {
@@ -283,6 +287,7 @@ static bool talkToCloud(int nSamples) {
     http.end();
     return false;
   }
+  vShowClock = http.header("x-dewy-show") == "clock";
   String heard = urlDecode(http.header("x-dewy-heard"));
   String reply = urlDecode(http.header("x-dewy-reply"));
   Serial.printf("[voice] heard: %s\n", heard.c_str());
@@ -304,11 +309,112 @@ static bool talkToCloud(int nSamples) {
   return playLen > 48;
 }
 
+
+// ---------------- the alarm: rings through the speaker, and listens for "snooze" or "stop" between the beeps ----------------
+// The main loop decides when it rings (alarmRinging) and what snooze and stop do. This task makes the sound, because it owns
+// the speaker and the mic. Between beeps it listens: anything said goes to the server, which answers snooze, stop or
+// nothing. No "Hey Dewy" needed while it rings.
+static volatile bool alarmRinging = false;
+static volatile int alarmHeard = 0;            // to the main loop: 1 = snooze, 2 = stop
+enum { ALARM_NONE = 0, ALARM_SNOOZE = 1, ALARM_STOP = 2 };
+
+static void spkTone(int freq, int ms, int volPct) {
+  static int16_t out[512];
+  int total = 16 * ms, edge = 80;              // 5 ms fade in and out, so the beeps don't click
+  float ph = 0, step = 2.0f * (float)M_PI * freq / 16000.0f;
+  float amp = 32767.0f * 0.6f * volPct / 100.0f;
+  for (int i = 0; i < total && alarmRinging;) {
+    int k = total - i < 256 ? total - i : 256;
+    for (int j = 0; j < k; j++, i++) {
+      float env = i < edge ? i / (float)edge : (total - i < edge ? (total - i) / (float)edge : 1.0f);
+      int16_t v = freq > 0 ? (int16_t)(sinf(ph) * amp * env) : 0;
+      ph += step; if (ph > 2.0f * (float)M_PI) ph -= 2.0f * (float)M_PI;
+      out[2 * j] = v; out[2 * j + 1] = v;
+    }
+    size_t wr = 0;
+    i2s_write(SPK_PORT, out, k * 4, &wr, pdMS_TO_TICKS(500));
+  }
+}
+
+// Sends what was said while the alarm rang. The server only listens for snooze or stop words, speaks nothing back,
+// and doesn't count it as one of the day's questions.
+static int alarmVoiceCommand(int nSamples) {
+  if (WiFi.status() != WL_CONNECTED || !cloudOn() || !deviceToken[0]) return ALARM_NONE;
+  TlsGuard tls(8000);
+  if (!tls.ok || heap_caps_get_free_size(MALLOC_CAP_INTERNAL) < 55000) { Serial.println("[alarm] can't ask the server right now"); return ALARM_NONE; }
+  WiFiClientSecure client;
+  client.setCACert(CA_BUNDLE);
+  HTTPClient http;
+  http.setTimeout(12000);
+  http.setUserAgent(VOICE_UA);
+  if (!http.begin(client, String(DEWY_SERVER) + "/api/device/chat")) return ALARM_NONE;
+  http.addHeader("Authorization", String("Bearer ") + deviceToken);
+  http.addHeader("Content-Type", "audio/pcm");
+  http.addHeader("X-Dewy-Version", DEWY_VERSION);
+  http.addHeader("X-Dewy-Context", "alarm");
+  int code = http.POST((uint8_t*)recBuf, (size_t)nSamples * 2);
+  int act = ALARM_NONE;
+  if (code == 200) {
+    JsonDocument d;
+    String body = http.getString();
+    if (!deserializeJson(d, body.c_str())) {
+      const char* a = d["action"] | "";
+      act = !strcmp(a, "snooze") ? ALARM_SNOOZE : (!strcmp(a, "stop") ? ALARM_STOP : ALARM_NONE);
+      Serial.printf("[alarm] heard \"%s\": %s\n", (const char*)(d["heard"] | ""), a[0] ? a : "nothing to do");
+    }
+  } else Serial.printf("[alarm] server answered %d\n", code);
+  http.end();
+  return act;
+}
+
+static void alarmRingLoop() {
+  uint32_t t0 = millis();
+  int16_t fr[256];
+  Serial.println("[alarm] ringing: say snooze or stop");
+  while (alarmRinging) {
+    uint32_t el = millis() - t0;
+    int vol = (int)(ALARM_VOLUME * (el >= 60000 ? 1.0f : 0.35f + 0.65f * el / 60000.0f));
+    spkTone(1760, 110, vol); spkTone(0, 80, 0);
+    spkTone(1760, 110, vol); spkTone(0, 80, 0);
+    spkTone(2093, 170, vol); spkTone(0, 140, 0);   // the last silence pushes the beep out of the speaker's buffer
+    if (!alarmRinging) break;
+
+    // listen for a second and a half; if someone starts talking, keep listening until they stop
+    Vad vad;
+    vad.begin(noiseTrack.ready() ? noiseTrack.level : 0, 9);   // skip 0.15 s: the end of the beep is still playing
+    int n = 0, lastLoudEnd = 0;
+    uint32_t l0 = millis();
+    while (alarmRinging) {
+      uint32_t lt = millis() - l0;
+      if (!vad.speech() && lt > 1500) break;    // nobody spoke: beep again
+      if (lt > 5000) break;
+      int got = micRead(fr, 256, 60);
+      if (got <= 0) continue;
+      Vad::Verdict v = vad.feed(rmsOf(fr, got));
+      if (v.keep && n + got <= REC_MAX_SAMPLES) { memcpy(recBuf + n, fr, got * sizeof(int16_t)); n += got; }
+      if (v.loud && vad.speech()) lastLoudEnd = n;
+      if (vad.speech() && n - lastLoudEnd > 9600) break;   // 0.6 s quiet after a word: one or two words are enough
+    }
+    if (!alarmRinging) break;
+    if (vad.speech()) {
+      n = lastLoudEnd + 4800 < n ? lastLoudEnd + 4800 : n;
+      if (n >= 6400) {
+        int act = alarmVoiceCommand(n);
+        if (act != ALARM_NONE) { alarmHeard = act; break; }
+      }
+    }
+  }
+  i2s_zero_dma_buffer(SPK_PORT);
+  i2s_zero_dma_buffer(MIC_PORT);
+  wakeReset();
+}
+
 static bool voiceRequest(bool byWake = false);
 
 static void voiceTask(void*) {
   int16_t chunk[160];                          // 10 ms of audio
   for (;;) {
+    if (alarmRinging && !vRequested) { alarmRingLoop(); continue; }
     if (!vRequested) {
       if (micTest) { vTaskDelay(pdMS_TO_TICKS(20)); continue; }   // the mic check on the main loop reads the mic instead
       int got = micRead(chunk, 160, 50);       // always listening while idle: the room's background level, and "Hey Dewy"
@@ -372,7 +478,11 @@ static void voicePoll(uint32_t now) {
       // The turn is over. Put the happy face back only if the face still wears one of the voice faces: an alarm, quiet
       // time, the complaint about being upside down, or the annoyed face from being poked must stay.
       face::Mood m = buddy.mood();
-      if (m == face::LISTENING || m == face::THINKING || m == face::TALKING) buddy.setMood(buddy.upsideDown() ? face::ANNOYED : face::HAPPY);
+      if (m == face::LISTENING || m == face::THINKING || m == face::TALKING) {
+        if (vShowClock && !buddy.upsideDown()) buddy.showTime(10000);   // "what time is it?": the clock stays up for 10 s
+        else buddy.setMood(buddy.upsideDown() ? face::ANNOYED : face::HAPPY);
+      }
+      vShowClock = false;
     } else if (!vCancel && !buddy.upsideDown()) {   // upside down it keeps complaining (it still listens and answers)
       if (st == V_LISTEN) buddy.listen();
       else if (st == V_THINK) buddy.setMood(face::THINKING);
