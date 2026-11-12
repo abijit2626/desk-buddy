@@ -41,6 +41,10 @@ your phone (notes link) ----^   |
    npx wrangler secret put ADMIN_KEY
    ```
    A quick way to make one: `node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"`
+
+   Make a **different** one for each. The register key is inside Dewy's firmware, so if the admin key were the same,
+   anyone who read the firmware could publish firmware. The server refuses to register or publish (error 503) while
+   the two are equal.
 5. Voice chat needs nothing more: its thinking step runs on Cloudflare's free allowance. (To use Claude instead,
    see [Voice chat](#voice-chat).)
 6. Deploy: `npm run deploy`. It prints the address, like `https://dewy.<you>.workers.dev`.
@@ -55,7 +59,7 @@ your phone (notes link) ----^   |
 cp .dev.vars.example .dev.vars     # local-only keys
 npm run db:local                   # local database
 npm run dev                        # http://127.0.0.1:8787
-npm test                           # 69 end-to-end API checks (with dev running)
+npm test                           # 77 end-to-end API checks (with dev running)
 npm run check                      # TypeScript
 ```
 

@@ -113,6 +113,9 @@ check("remove the notes link", r.status === 200, r);
 r = await call("POST", "/api/notes", { token: linkToken, body: { text: "still here?" } });
 check("the removed link stops working", r.status === 401, r);
 
+r = await call("DELETE", "/api/access/%E0%A4%A", { token: owner2 });
+check("a broken %-escape in an id is a 400, not a server error", r.status === 400, r);
+
 // --- firmware updates
 r = await call("PUT", "/api/admin/firmware", { token: "wrong-admin-key-wrong-admin-key", body: {} });
 check("publishing firmware needs the admin key", r.status === 403, r);
