@@ -172,7 +172,9 @@
   #define SLEEP_AFTER_MS  (60UL * 60UL * 1000UL)
 #endif
 
-#define FRAME_MS        33         // about 30 frames a second
+#ifndef FRAME_MS
+#define FRAME_MS        33         // about 30 frames a second. With the parallel screen, 16 (about 60) is smoother
+#endif
 #ifndef SCREEN_DMA
 #define SCREEN_DMA      1          // send each strip by DMA while the next is drawn. 0 = plain blocking sends
 #endif
