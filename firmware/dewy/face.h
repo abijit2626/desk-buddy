@@ -17,6 +17,8 @@ static const float PI_F = 3.14159265f;
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC optimize("O2")
 #endif
+inline float fmn(float a, float b) { return b < a ? b : a; }
+inline float fmx(float a, float b) { return b > a ? b : a; }
 inline float clampf(float v, float a, float b) { return v < a ? a : (v > b ? b : v); }
 inline float lerpf(float a, float b, float t) { return a + (b - a) * t; }
 
@@ -162,11 +164,11 @@ inline void strokeSegs(Canvas& cv, const Seg* s, int n, float width, RGB c, floa
   float r = width * 0.5f, minx = 1e9f, miny = 1e9f, maxx = -1e9f, maxy = -1e9f;
   static float sdx[160], sdy[160], sinv[160], slo[160], shi[160];   // per segment, worked out once (only loop() draws)
   for (int i = 0; i < n; i++) {
-    minx = fminf(minx, fminf(s[i].x0, s[i].x1)); maxx = fmaxf(maxx, fmaxf(s[i].x0, s[i].x1));
-    miny = fminf(miny, fminf(s[i].y0, s[i].y1)); maxy = fmaxf(maxy, fmaxf(s[i].y0, s[i].y1));
+    minx = fmn(minx, fmn(s[i].x0, s[i].x1)); maxx = fmx(maxx, fmx(s[i].x0, s[i].x1));
+    miny = fmn(miny, fmn(s[i].y0, s[i].y1)); maxy = fmx(maxy, fmx(s[i].y0, s[i].y1));
     float dx = s[i].x1 - s[i].x0, dy = s[i].y1 - s[i].y0, l2 = dx * dx + dy * dy;
     sdx[i] = dx; sdy[i] = dy; sinv[i] = l2 > 1e-6f ? 1.f / l2 : 0.f;
-    slo[i] = fminf(s[i].y0, s[i].y1) - r - 1; shi[i] = fmaxf(s[i].y0, s[i].y1) + r + 1;
+    slo[i] = fmn(s[i].y0, s[i].y1) - r - 1; shi[i] = fmx(s[i].y0, s[i].y1) + r + 1;
   }
   int x0, y0, x1, y1;
   cv.bounds(minx + cv.tx - r - 1, miny + cv.ty - r - 1, maxx + cv.tx + r + 1, maxy + cv.ty + r + 1, x0, y0, x1, y1);
@@ -257,10 +259,12 @@ inline void roundRect(Canvas& cv, float x, float y, float w, float h, const floa
   // Only pixels near the edge need the full distance maths. Each row is cut into:
   // outside (skipped), the edge band (worked out exactly as before), and the solid middle (just filled).
   float rmax = 0;
-  for (int i = 0; i < 4; i++) rmax = fmaxf(rmax, fminf(r[i], fminf(hw, hh)));
-  float edge = fmaxf(0.5f, doLine ? lw * 0.5f + 0.5f : 0.5f);
+  for (int i = 0; i < 4; i++) rmax = fmx(rmax, fmn(r[i], fmn(hw, hh)));
+  float edge = fmx(0.5f, doLine ? lw * 0.5f + 0.5f : 0.5f);
   float mOut = edge + 0.01f, mIn = edge + 0.05f;
   const uint16_t fpk = pack(fc), opk = pack(oc);
+  const float hwr = hw - rmax, hhr = hh - rmax;
+  const bool flatOk = rmax >= mIn + 0.01f;   // with tiny corners the shortcut below is not exact, so skip it
   float ex = fabsf(hw * cs) + fabsf(hh * sn) + lw + 2, ey = fabsf(hw * sn) + fabsf(hh * cs) + lw + 2;
   int x0, y0, x1, y1;
   cv.bounds(cx - ex, cy - ey, cx + ex, cy + ey, x0, y0, x1, y1);
@@ -269,9 +273,9 @@ inline void roundRect(Canvas& cv, float x, float y, float w, float h, const floa
   auto span = [&](float A, float B, float py, float& lo, float& hi) -> bool {
     if (A < 0 || B < 0) return false;
     lo = -1e9f; hi = 1e9f;
-    if (ics != 0) { float a = (-A - py * sn) * ics, b = (A - py * sn) * ics; lo = fmaxf(lo, fminf(a, b)); hi = fminf(hi, fmaxf(a, b)); }
+    if (ics != 0) { float a = (-A - py * sn) * ics, b = (A - py * sn) * ics; lo = fmx(lo, fmn(a, b)); hi = fmn(hi, fmx(a, b)); }
     else if (fabsf(py * sn) > A) return false;
-    if (isn != 0) { float a = (py * cs + B) * isn, b = (py * cs - B) * isn; lo = fmaxf(lo, fminf(a, b)); hi = fminf(hi, fmaxf(a, b)); }
+    if (isn != 0) { float a = (py * cs + B) * isn, b = (py * cs - B) * isn; lo = fmx(lo, fmn(a, b)); hi = fmn(hi, fmx(a, b)); }
     else if (fabsf(py * cs) > B) return false;
     return lo <= hi;
   };
@@ -285,9 +289,9 @@ inline void roundRect(Canvas& cv, float x, float y, float w, float h, const floa
     // solid middle: the union of the two arms of the rounded box's cross, shrunk by the edge band
     int is = 1, ie = 0;
     float l1, h1, l2, h2;
-    bool a1 = span(hw - mIn, fminf(hh - rmax, hh - mIn), py, l1, h1);
-    bool a2 = span(fminf(hw - rmax, hw - mIn), hh - mIn, py, l2, h2);
-    if (a1 && a2 && l2 <= h1 && l1 <= h2) { l1 = fminf(l1, l2); h1 = fmaxf(h1, h2); }
+    bool a1 = span(hw - mIn, fmn(hh - rmax, hh - mIn), py, l1, h1);
+    bool a2 = span(fmn(hw - rmax, hw - mIn), hh - mIn, py, l2, h2);
+    if (a1 && a2 && l2 <= h1 && l1 <= h2) { l1 = fmn(l1, l2); h1 = fmx(h1, h2); }
     else if (a2 && (!a1 || h2 - l2 > h1 - l1)) { l1 = l2; h1 = h2; a1 = true; }
     if (a1) { is = int(ceilf(l1 + off)); ie = int(floorf(h1 + off)); }
     for (int xx = xs; xx <= xe; xx++) {
@@ -299,11 +303,16 @@ inline void roundRect(Canvas& cv, float x, float y, float w, float h, const floa
       }
       float px = xx + 0.5f - cx;
       float qx = px * cs + py * sn, qy = -px * sn + py * cs;           // into the box's frame
-      float rad = qx < 0 ? (qy < 0 ? r[0] : r[3]) : (qy < 0 ? r[1] : r[2]);
-      rad = fminf(rad, fminf(hw, hh));
-      float dx = fabsf(qx) - (hw - rad), dy = fabsf(qy) - (hh - rad);
-      float ox = fmaxf(dx, 0), oy = fmaxf(dy, 0);
-      float dist = ((ox > 0 && oy > 0) ? sqrtf(ox * ox + oy * oy) : ox + oy) + fminf(fmaxf(dx, dy), 0) - rad;
+      float aqx = fabsf(qx), aqy = fabsf(qy), dist;
+      if (flatOk && aqx <= hwr) dist = aqy - hh;              // along the top or bottom edge: no corner maths
+      else if (flatOk && aqy <= hhr) dist = aqx - hw;         // along a side edge
+      else {
+        float rad = qx < 0 ? (qy < 0 ? r[0] : r[3]) : (qy < 0 ? r[1] : r[2]);
+        rad = fmn(rad, fmn(hw, hh));
+        float dx = aqx - (hw - rad), dy = aqy - (hh - rad);
+        float ox = fmx(dx, 0), oy = fmx(dy, 0);
+        dist = ((ox > 0 && oy > 0) ? sqrtf(ox * ox + oy * oy) : ox + oy) + fmn(fmx(dx, dy), 0) - rad;
+      }
       uint16_t* pp = cv.fb + yy * W + xx;   // inside the clip: the loops stay within cv.bounds()
       uint16_t v = *pp;
       if (doFill) {
@@ -329,8 +338,8 @@ inline void fillHeart(Canvas& cv, float cx, float bottom, float size, RGB c, flo
     float px = fabsf(x + 0.5f - cx) / size, py = (bottom - (y + 0.5f)) / size, dd;
     if (py + px > 1.0f) { float ax = px - 0.25f, ay = py - 0.75f; dd = sqrtf(ax * ax + ay * ay) - 0.35355339f; }
     else {
-      float ax = px, ay = py - 1.0f, k = 0.5f * fmaxf(px + py, 0.0f), bx = px - k, by = py - k;
-      dd = sqrtf(fminf(ax * ax + ay * ay, bx * bx + by * by)) * (px - py > 0 ? 1.f : -1.f);
+      float ax = px, ay = py - 1.0f, k = 0.5f * fmx(px + py, 0.0f), bx = px - k, by = py - k;
+      dd = sqrtf(fmn(ax * ax + ay * ay, bx * bx + by * by)) * (px - py > 0 ? 1.f : -1.f);
     }
     float cov = clampf(0.5f - dd * size, 0, 1);
     if (cov > 0) cv.put(x, y, c, cov * alpha);
@@ -381,28 +390,56 @@ inline void fillConvex(Canvas& cv, const float* xy, int n, RGB c, float alpha) {
   for (int i = 0; i < n; i++) {
     int j = (i + 1) % n;
     float x0 = xy[2 * i] + cv.tx, y0 = xy[2 * i + 1] + cv.ty, ex = xy[2 * j] - xy[2 * i], ey = xy[2 * j + 1] - xy[2 * i + 1];
-    float l = fmaxf(1e-6f, sqrtf(ex * ex + ey * ey));
+    float l = fmx(1e-6f, sqrtf(ex * ex + ey * ey));
     nx[i] = sgn * ey / l; ny[i] = -sgn * ex / l; d0[i] = nx[i] * x0 + ny[i] * y0;   // outward edge normals
-    minx = fminf(minx, x0); maxx = fmaxf(maxx, x0); miny = fminf(miny, y0); maxy = fmaxf(maxy, y0);
+    minx = fmn(minx, x0); maxx = fmx(maxx, x0); miny = fmn(miny, y0); maxy = fmx(maxy, y0);
   }
   int x0, y0, x1, y1;
   cv.bounds(minx - 1, miny - 1, maxx + 1, maxy + 1, x0, y0, x1, y1);
-  for (int y = y0; y < y1; y++) for (int x = x0; x < x1; x++) {
-    float px = x + 0.5f, py = y + 0.5f, d = -1e9f;
-    for (int i = 0; i < n; i++) d = fmaxf(d, nx[i] * px + ny[i] * py - d0[i]);
-    float cov = clampf(0.5f - d, 0, 1);
-    if (cov > 0) cv.put(x, y, c, cov * alpha);
+  // Each row: where every edge says "inside" (a plain filled run), and where it says "at least a little inside"
+  // (the pixels in between are the anti-aliased edge, worked out one by one). Only edge pixels pay for the maths.
+  float inx[8];
+  for (int i = 0; i < n; i++) inx[i] = fabsf(nx[i]) > 1e-6f ? 1.f / nx[i] : 0.f;
+  const float EPS = 1e-3f;
+  for (int y = y0; y < y1; y++) {
+    float py = y + 0.5f;
+    float eLo = float(x0), eHi = float(x1 - 1), sLo = float(x0), sHi = float(x1 - 1);
+    bool any = true, solid = true;
+    for (int i = 0; i < n; i++) {
+      float base = ny[i] * py - d0[i];                    // this edge's d = nx * px + base
+      if (inx[i] == 0.f) { if (base > 0.5f + EPS) any = false; if (base > -0.5f - EPS) solid = false; continue; }
+      float pe = (0.5f + EPS - base) * inx[i] - 0.5f, ps = (-0.5f - EPS - base) * inx[i] - 0.5f;   // x where d crosses the limits
+      if (nx[i] > 0) { eHi = fmn(eHi, floorf(pe)); sHi = fmn(sHi, floorf(ps)); }
+      else { eLo = fmx(eLo, ceilf(pe)); sLo = fmx(sLo, ceilf(ps)); }
+    }
+    if (!any || eLo > eHi) continue;
+    int el = int(eLo), er = int(eHi), sl = 1, sr = 0;
+    if (solid && sLo <= sHi) { sl = int(sLo); sr = int(sHi); if (sl < el) sl = el; if (sr > er) sr = er; }
+    auto edgePx = [&](int x) {
+      float px = x + 0.5f, d = -1e9f;
+      for (int i = 0; i < n; i++) d = fmx(d, nx[i] * px + ny[i] * py - d0[i]);
+      float cov = clampf(0.5f - d, 0, 1);
+      if (cov > 0) cv.put(x, y, c, cov * alpha);
+    };
+    if (sl > sr) { for (int x = el; x <= er; x++) edgePx(x); continue; }
+    for (int x = el; x < sl; x++) edgePx(x);
+    cv.fillRun(sl, sr, y, c, alpha);
+    for (int x = sr + 1; x <= er; x++) edgePx(x);
   }
 }
 
 // darken everything drawn so far (a = 0: no change, 1: black)
 inline void dimAll(Canvas& cv, float a) {
-  int k = int((1 - clampf(a, 0, 1)) * 256);
-  for (int i = cv.bandY0 * W; i < cv.bandY1 * W; i++) {
-    uint16_t v = uint16_t((cv.fb[i] >> 8) | (cv.fb[i] << 8));
-    int r = (((v >> 11) & 31) * k) >> 8, g = (((v >> 5) & 63) * k) >> 8, b = ((v & 31) * k) >> 8;
-    v = uint16_t((r << 11) | (g << 5) | b);
-    cv.fb[i] = uint16_t((v >> 8) | (v << 8));
+  uint32_t k = uint32_t((1 - clampf(a, 0, 1)) * 32.f + 0.5f);   // 0..32 of full brightness
+  uint16_t* p = cv.fb + cv.bandY0 * W; uint16_t* e = cv.fb + cv.bandY1 * W;
+  for (; p < e; p++) {
+    uint16_t s = *p;
+    if (!s) continue;                                              // black stays black (most of the screen)
+    uint32_t d = uint16_t((s >> 8) | (s << 8));
+    d = (d | (d << 16)) & 0x07E0F81Fu;
+    d = ((d * k) >> 5) & 0x07E0F81Fu;
+    uint32_t v = (d | (d >> 16)) & 0xFFFFu;
+    *p = uint16_t((v >> 8) | (v << 8));
   }
 }
 // turn the picture upside down (used when the buddy itself is upside down, so it still reads right).
@@ -707,7 +744,7 @@ public:
   }
   void stopTimer() { timerOn = false; }
   bool timerActive() const { return timerOn; }
-  uint32_t timerLeftMs() const { return timerActive() ? uint32_t(fmaxf(0, timerDur - (t - timerStart))) : 0; }
+  uint32_t timerLeftMs() const { return timerActive() ? uint32_t(fmx(0, timerDur - (t - timerStart))) : 0; }
 
   // ---- water and stretch nudges. Returns false (and does nothing) while asleep or face down.
   bool remind(Reminder r) {
@@ -802,7 +839,7 @@ public:
       timerOn = false;
       if (moodNow != SLEEPY && !faceDownOn) { breakAt = t; play1(PETTED, 2500, HAPPY); }
     }
-    float dt = fminf(0.05f, dtMs / 1000.f);
+    float dt = fmn(0.05f, dtMs / 1000.f);
     if (t >= nextBlink) {
       blinkAt = t; bool slow = moodNow == BORED; bool dbl = !slow && rnd() < 0.2f;
       nextBlink = t + (dbl ? 420 : between(slow ? 4000 : 2500, slow ? 7000 : 6000));
@@ -832,7 +869,7 @@ public:
     RGB eye = hex(pal.eye), pupL = hex(pal.pupilL), pupR = hex(pal.pupilR), blushC = hex(pal.blush), acc = hex(pal.accent);
     float b = blinkAmt(), s = squintAmt();
     float breath = sinf(2 * PI_F * t / 4200);
-    float lvl = fmaxf(0, fabsf(sinf(t / 95)) * (0.55f + 0.45f * sinf(t / 410)));
+    float lvl = fmx(0, fabsf(sinf(t / 95)) * (0.55f + 0.45f * sinf(t / 410)));
     float talkLvl = c[TALK] * lvl;
     float bounceMul = mouth ? 1 : 1 - 0.1f * talkLvl, bounceDy = mouth ? 0 : -3 * talkLvl;
     float wobble = c[WOB] * 9 * sinf(t / 520);
@@ -841,7 +878,7 @@ public:
     cv.tx = c[SHAKE] * 5 * sinf(t / 16); cv.ty = 1.2f * breath;
 
     float blushA = c[BLUSH] * (0.75f + 0.25f * sinf(t / 190));
-    blushA = fmaxf(blushA, affection * 0.55f);          // a fond buddy has rosy cheeks even at rest
+    blushA = fmx(blushA, affection * 0.55f);          // a fond buddy has rosy cheeks even at rest
     fillEllipse(cv, 48, 170, 24, 10, blushC, blushA);
     fillEllipse(cv, 272, 170, 24, 10, blushC, blushA);
 
@@ -865,7 +902,7 @@ public:
       for (int i = 0; i < 3; i++) {
         float p = fmodf(t + i * 800, 2400) / 2400, o = p < 0.15f ? p / 0.15f : 1 - (p - 0.15f) / 0.85f;
         float hgt = zd[i][2] * 0.72f;
-        drawText(cv, i == 2 ? "Z" : "z", zd[i][0] + zd[i][2] * 0.3f, zd[i][1] - p * 22 + zd[i][2] * 0.12f, hgt, fmaxf(2.f, zd[i][2] * 0.13f), eye, c[ZS] * o);
+        drawText(cv, i == 2 ? "Z" : "z", zd[i][0] + zd[i][2] * 0.3f, zd[i][1] - p * 22 + zd[i][2] * 0.12f, hgt, fmx(2.f, zd[i][2] * 0.13f), eye, c[ZS] * o);
       }
     }
     if (c[WAVES] > 0.01f) {
@@ -874,7 +911,7 @@ public:
         if (i == 0) { p.moveTo(3, 22); p.quadTo(9, 32, 3, 42); }
         if (i == 1) { p.moveTo(9, 12); p.quadTo(19, 32, 9, 52); }
         if (i == 2) { p.moveTo(15, 4); p.quadTo(29, 32, 15, 60); }
-        strokeSegs(cv, p.segs, p.n, 4, eye, c[WAVES] * (0.2f + 0.8f * fmaxf(0, sinf(t / 250 - i * 0.9f))));
+        strokeSegs(cv, p.segs, p.n, 4, eye, c[WAVES] * (0.2f + 0.8f * fmx(0, sinf(t / 250 - i * 0.9f))));
       }
     }
     if (c[DOTS] > 0.01f) {
@@ -956,7 +993,7 @@ private:
 
   static float fade(float e, float dur, float in, float out) {
     if (e < 0 || e > dur) return 0;
-    return fminf(1, e / in) * fminf(1, (dur - e) / out);
+    return fmn(1, e / in) * fmn(1, (dur - e) / out);
   }
   bool weatherShowing() const { return weatherAt >= 0 && t < weatherAt + weatherDur; }
   bool noteShowing() const { return noteAt >= 0 && t >= noteAt + 1200 && t < noteAt + NOTE_MS; }
@@ -975,7 +1012,7 @@ private:
     for (int i = 0; i < npk; i++) pokes[i] -= R;
     for (int i = 0; i < nq; i++) q[i].at -= R;
     float* ev[] = { &eightAt, &weatherAt, &breakAt, &remindAt, &noteAt, &bdayAt, &bondAt };
-    for (float* e : ev) if (*e >= 0) *e = fmaxf(-1, *e - R);   // anything that old has finished anyway
+    for (float* e : ev) if (*e >= 0) *e = fmx(-1, *e - R);   // anything that old has finished anyway
   }
 
   // words on screen in one of three sizes
@@ -1056,7 +1093,7 @@ private:
     if (timerOn && awake) {
       float pr = clampf((t - timerStart) / timerDur, 0, 1);
       roundRect(cv, 60, 8, 200, 8, r4, white, 0.15f, white, 0, 0);
-      if (pr > 0.005f) roundRect(cv, 60, 8, fmaxf(8, 200 * pr), 8, r4, acc, 1, acc, 0, 0);
+      if (pr > 0.005f) roundRect(cv, 60, 8, fmx(8, 200 * pr), 8, r4, acc, 1, acc, 0, 0);
       char buf[24]; snprintf(buf, sizeof buf, "%u min left", unsigned((timerLeftMs() + 59999) / 60000));
       say(cv, TEXT_SMALL, buf, 160, 228, 1, eye, 0.8f);
     }
@@ -1125,7 +1162,7 @@ private:
       float blink = battery <= 5 ? 0.4f + 0.6f * fabsf(sinf(t / 300)) : 1;
       roundRect(cv, 12, 10, 30, 15, r3, g, 0, g, 2, 1);
       roundRect(cv, 42, 14, 3, 7, r2, g, 1, g, 0, 0);
-      roundRect(cv, 14.5f, 12.5f, fmaxf(2.5f, 25 * battery / 100.f), 10, r2, red, blink, red, 0, 0);
+      roundRect(cv, 14.5f, 12.5f, fmx(2.5f, 25 * battery / 100.f), 10, r2, red, blink, red, 0, 0);
       if (battery <= 5) say(cv, TEXT_SMALL, "charge me", 160, 228, 1, red, 0.5f + 0.5f * fabsf(sinf(t / 300)));
     }
 
@@ -1210,7 +1247,7 @@ private:
     if (updateP >= 0) {
       say(cv, TEXT_SMALL, updateP >= 1 ? "New trick learned!" : "Learning a new trick...", 160, 206, 1, eye, 0.9f);
       roundRect(cv, 70, 222, 180, 8, r4, white, 0.15f, white, 0, 0);
-      roundRect(cv, 70, 222, fmaxf(8, 180 * clampf(updateP, 0, 1)), 8, r4, acc, 1, acc, 0, 0);
+      roundRect(cv, 70, 222, fmx(8, 180 * clampf(updateP, 0, 1)), 8, r4, acc, 1, acc, 0, 0);
     }
 
     // upside down: complain (the whole picture is flipped after this, so it reads the right way up)
@@ -1299,7 +1336,7 @@ private:
     const float* c = cur;
     float w = side ? c[Rw] : c[Lw], h = (side ? c[Rh] : c[Lh]) * (1 + 0.008f * breath);
     float cx = side ? c[Rcx] : c[Lcx], cy = (side ? c[Rcy] : c[Lcy]) + bounceDy;
-    float sy = fmaxf(0.03f, c[OPEN] * (1 - 0.94f * b) * (1 - 0.35f * s) * bounceMul);
+    float sy = fmx(0.03f, c[OPEN] * (1 - 0.94f * b) * (1 - 0.35f * s) * bounceMul);
     float rot = ((side ? c[Rrot] : c[Lrot]) + wobble * sg) * PI_F / 180;
     float eyeOp = clampf((c[OPEN] - 0.06f) / 0.3f, 0, 1);
     if (eyeOp < 0.01f) return;
@@ -1309,13 +1346,13 @@ private:
     // leaving a crescent of eye colour around it). Acorn size still follows the mood through ps.
     float sz = ps / 60.f;
     float acW = 0.46f * w * sz, acH = h * (0.72f + 0.28f * sz);
-    float pw = ps + (fmaxf(6, ps * 0.42f) - ps) * kc + (acW - ps) * ka;
+    float pw = ps + (fmx(6, ps * 0.42f) - ps) * kc + (acW - ps) * ka;
     float ph = ps + (0.66f * h - ps) * kc + (acH - ps) * ka;
     float px = (side ? c[Rpx] : c[Lpx]) + jx + dx, py = (side ? c[Rpy] : c[Lpy]) + jy + dy + 4 * b;
     py += ka * 0.18f * h;   // the acorn sits low, so its bottom is hidden by the bottom of the eye
     float pra = pw / 2, prb = ph / 2;
     bool pupil = c[PO] > 0.01f;
-    float lt = fmaxf(0, c[LT]); bool lid = lt > 0.005f;
+    float lt = fmx(0, c[LT]); bool lid = lt > 0.005f;
     float lidY0 = -h / 2 + lt * h, lth = c[LA] * -sg * PI_F / 180, lc = cosf(lth), ls = sinf(lth);
     float cr = cosf(rot), sr = sinf(rot);
     float pivX = cx + cv.tx, pivY = cy + piv + cv.ty;
@@ -1325,7 +1362,7 @@ private:
     for (int i = 0; i < 2; i++) for (int j = 0; j < 2; j++) {
       float lx = us[i], ly = (vs[j] - piv) * sy;
       float X = pivX + lx * cr - ly * sr, Y = pivY + lx * sr + ly * cr;
-      minx = fminf(minx, X); maxx = fmaxf(maxx, X); miny = fminf(miny, Y); maxy = fmaxf(maxy, Y);
+      minx = fmn(minx, X); maxx = fmx(maxx, X); miny = fmn(miny, Y); maxy = fmx(maxy, Y);
     }
     int x0, y0, x1, y1;
     cv.bounds(minx - 2, miny - 2, maxx + 2, maxy + 2, x0, y0, x1, y1);
@@ -1338,7 +1375,7 @@ private:
     const float po = c[PO];
     const uint16_t pkEye = pack(eyeC), pkPup = pack(mix(eyeC, pupC, po));
     const float kx = -sr * isy;                                   // how fast v changes along a row
-    const float pM = fmaxf(ipa2, ipb2 * isy * isy), pS = (sqrtf(pM) + sqrtf(pM + 4)) * 0.5f, pFar = pS * pS * 1.02f + 0.01f;
+    const float pM = fmx(ipa2, ipb2 * isy * isy), pS = (sqrtf(pM) + sqrtf(pM + 4)) * 0.5f, pFar = pS * pS * 1.02f + 0.01f;
     const float pDen = cr * cr * ipa2 + kx * kx * ipb2;
     int hintL = -1, hintR = -1;                                    // last row's solid span: this row's is close by
     for (int y = y0; y < y1; y++) {
