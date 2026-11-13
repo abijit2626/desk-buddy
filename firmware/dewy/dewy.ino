@@ -29,12 +29,6 @@
 #include <sys/time.h>
 #include <esp_heap_caps.h>
 #include <esp_memory_utils.h>
-
-// The face builds its shapes in Path objects (about 2.6 KB each) on the stack, several per frame, more with the
-// weather card or a note. The Arduino default of 8 KB for loop() overflowed on the first real board, so give it 32 KB.
-#ifdef SET_LOOP_TASK_STACK_SIZE
-SET_LOOP_TASK_STACK_SIZE(32 * 1024);
-#endif
 #include "config.h"
 #include "display.h"
 #include "face.h"
@@ -255,6 +249,12 @@ static void pollOrientation(uint32_t now) {
 #include "cloud.h"
 #include "portal.h"
 #include "voice.h"
+
+// The face builds its shapes in Path objects (about 2.6 KB each) on the stack, several per frame, more with the
+// weather card or a note. The Arduino default of 8 KB for loop() overflowed on the first real board, so give it 32 KB.
+#ifdef SET_LOOP_TASK_STACK_SIZE
+SET_LOOP_TASK_STACK_SIZE(32 * 1024);
+#endif
 
 static bool otaOn = false;
 static uint32_t wifiStartAt = 0;
