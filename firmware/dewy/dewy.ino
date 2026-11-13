@@ -115,6 +115,7 @@ static face::Font fontFrom(const lgfx::GFXfont& f) {
 }
 
 // ---------------- drawing one frame ----------------
+static float drawCostMs = 0;    // the drawing part of it
 static float frameCostMs = 0;   // drawing + sending one frame, averaged (the "mem" command shows it)
 // The frame is drawn in strips of BAND_ROWS rows into two small buffers in fast internal RAM. While one strip goes
 // to the screen by DMA, the next is drawn. A whole 150 KB frame in internal RAM left Wi-Fi too little memory, and
@@ -140,6 +141,7 @@ static void drawFrame() {
   }
   uint32_t t0 = micros();
   bool flipped = buddy.upsideDown();
+  uint32_t drawUs = 0;
   tft.startWrite();
   for (int k = 0, y0 = 0; y0 < face::H; k++, y0 += BAND_ROWS) {
     int rows = face::H - y0 < BAND_ROWS ? face::H - y0 : BAND_ROWS;
@@ -147,7 +149,9 @@ static void drawFrame() {
     uint16_t* buf = bandBuf[k & 1];                         // the other buffer may still be going out by DMA
     canvas.fb = buf - sy0 * face::W;                        // so fb[y * W + x] lands in this strip for its rows
     canvas.bandY0 = sy0; canvas.bandY1 = sy0 + rows;
+    uint32_t d0 = micros();
     buddy.render(canvas, hhmm);
+    drawUs += micros() - d0;
 #if SCREEN_DMA
     tft.waitDMA();                                          // the previous strip has finished sending
     tft.pushImageDMA(0, y0, face::W, rows, (lgfx::swap565_t*)buf);
@@ -157,6 +161,7 @@ static void drawFrame() {
   }
   tft.endWrite();                                           // waits for the last strip
   frameCostMs += ((micros() - t0) / 1000.0f - frameCostMs) * 0.05f;
+  drawCostMs += (drawUs / 1000.0f - drawCostMs) * 0.05f;
 }
 
 // ---------------- personality: the bond grows with pets, pokes and pick-ups (saved in flash, see bond.h) ----------------
@@ -628,9 +633,9 @@ static void handleCommand(String raw) {
     else { simBattery = int(v.toInt()); buddy.setBattery(simBattery); if (simBattery <= 5) buddy.sleep(); Serial.printf("battery: pretending %d%%\n", simBattery); }
   }
   else if (cmd == "mem") {
-    Serial.printf("internal RAM free %u (largest block %u), PSRAM free %u, frame takes %.1f ms of %d ms (%d-row strips, SPI %d MHz)\n",
+    Serial.printf("internal RAM free %u (largest block %u), PSRAM free %u, frame takes %.1f ms of %d ms (drawing %.1f, sending %.1f; %d-row strips, %s)\n",
                   unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)), unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)),
-                  unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)), frameCostMs, FRAME_MS, BAND_ROWS, int(SPI_FREQ / 1000000));
+                  unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)), frameCostMs, FRAME_MS, drawCostMs, frameCostMs - drawCostMs, BAND_ROWS, SCREEN_PARALLEL ? "parallel screen" : "SPI screen");
 #ifdef ESP_PLATFORM
     Serial.printf("loop stack: %u bytes never used (of 32768)\n", unsigned(uxTaskGetStackHighWaterMark(nullptr)));
 #endif

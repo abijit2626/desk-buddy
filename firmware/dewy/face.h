@@ -13,6 +13,10 @@ namespace face {
 static const int W = 320, H = 240;
 static const float PI_F = 3.14159265f;
 
+// The Arduino build optimises for size; the drawing loops need speed.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC optimize("O2")
+#endif
 inline float clampf(float v, float a, float b) { return v < a ? a : (v > b ? b : v); }
 inline float lerpf(float a, float b, float t) { return a + (b - a) * t; }
 
@@ -21,9 +25,10 @@ struct RGB { float r, g, b; };
 inline RGB hex(uint32_t h) { return { float((h >> 16) & 255), float((h >> 8) & 255), float(h & 255) }; }
 inline RGB mix(RGB a, RGB b, float t) { return { lerpf(a.r, b.r, t), lerpf(a.g, b.g, t), lerpf(a.b, b.b, t) }; }
 inline uint16_t pack(RGB c) {
-  int r = int(clampf(c.r, 0, 255) * 31.f / 255.f + 0.5f);
-  int g = int(clampf(c.g, 0, 255) * 63.f / 255.f + 0.5f);
-  int b = int(clampf(c.b, 0, 255) * 31.f / 255.f + 0.5f);
+  // multiply by a constant: "x * 31.f / 255.f" is a real division per channel, and the ESP32-S3 divides in software
+  int r = int(clampf(c.r, 0, 255) * (31.f / 255.f) + 0.5f);
+  int g = int(clampf(c.g, 0, 255) * (63.f / 255.f) + 0.5f);
+  int b = int(clampf(c.b, 0, 255) * (31.f / 255.f) + 0.5f);
   uint16_t v = uint16_t((r << 11) | (g << 5) | b);
   return uint16_t((v >> 8) | (v << 8));
 }
@@ -117,27 +122,48 @@ struct Canvas {
   }
 };
 
+// Edge coverage of a shape given F (negative inside) and its gradient squared g2: clamp(0.5 - F / sqrt(g2), 0, 1).
+// Well inside or well outside needs no square root or division, which the ESP32-S3 has no hardware for:
+// only the pixels on the edge pay for them. This is what makes the face fast enough to be smooth.
+inline float edgeCov(float F, float g2) {
+  float q = 0.25f * g2, F2 = F * F;
+  if (F2 >= q) return F < 0 ? 1.f : (g2 > 1e-12f ? 0.f : 1.f);
+  float g = sqrtf(g2);
+  return g > 1e-6f ? clampf(0.5f - F / g, 0, 1) : 1.f;
+}
+
 // stroke a set of segments as one shape (round caps and joins, anti-aliased, no double-blending)
 inline void strokeSegs(Canvas& cv, const Seg* s, int n, float width, RGB c, float alpha) {
   if (alpha < 0.01f || n <= 0) return;
+  if (n > 160) n = 160;
   float r = width * 0.5f, minx = 1e9f, miny = 1e9f, maxx = -1e9f, maxy = -1e9f;
+  static float sdx[160], sdy[160], sinv[160], slo[160], shi[160];   // per segment, worked out once (only loop() draws)
   for (int i = 0; i < n; i++) {
     minx = fminf(minx, fminf(s[i].x0, s[i].x1)); maxx = fmaxf(maxx, fmaxf(s[i].x0, s[i].x1));
     miny = fminf(miny, fminf(s[i].y0, s[i].y1)); maxy = fmaxf(maxy, fmaxf(s[i].y0, s[i].y1));
+    float dx = s[i].x1 - s[i].x0, dy = s[i].y1 - s[i].y0, l2 = dx * dx + dy * dy;
+    sdx[i] = dx; sdy[i] = dy; sinv[i] = l2 > 1e-6f ? 1.f / l2 : 0.f;
+    slo[i] = fminf(s[i].y0, s[i].y1) - r - 1; shi[i] = fmaxf(s[i].y0, s[i].y1) + r + 1;
   }
   int x0, y0, x1, y1;
   cv.bounds(minx + cv.tx - r - 1, miny + cv.ty - r - 1, maxx + cv.tx + r + 1, maxy + cv.ty + r + 1, x0, y0, x1, y1);
+  const float reach = (r + 0.5f) * (r + 0.5f), solid = r > 0.5f ? (r - 0.5f) * (r - 0.5f) : -1.f;
+  static uint8_t act[160];
   for (int y = y0; y < y1; y++) {
     float py = y + 0.5f - cv.ty;
+    int na = 0;
+    for (int i = 0; i < n; i++) if (py >= slo[i] && py <= shi[i]) act[na++] = uint8_t(i);   // segments near this row
+    if (!na) continue;
     for (int x = x0; x < x1; x++) {
       float px = x + 0.5f - cv.tx, best = 1e9f;
-      for (int i = 0; i < n; i++) {
-        float dx = s[i].x1 - s[i].x0, dy = s[i].y1 - s[i].y0, l2 = dx * dx + dy * dy;
-        float t = l2 > 1e-6f ? clampf(((px - s[i].x0) * dx + (py - s[i].y0) * dy) / l2, 0, 1) : 0;
-        float ex = s[i].x0 + dx * t - px, ey = s[i].y0 + dy * t - py, d2 = ex * ex + ey * ey;
+      for (int k = 0; k < na; k++) {
+        int i = act[k];
+        float t = clampf(((px - s[i].x0) * sdx[i] + (py - s[i].y0) * sdy[i]) * sinv[i], 0, 1);
+        float ex = s[i].x0 + sdx[i] * t - px, ey = s[i].y0 + sdy[i] * t - py, d2 = ex * ex + ey * ey;
         if (d2 < best) best = d2;
       }
-      float cov = clampf(r + 0.5f - sqrtf(best), 0, 1);
+      if (best >= reach) continue;                                   // outside: no square root needed
+      float cov = best <= solid ? 1.f : clampf(r + 0.5f - sqrtf(best), 0, 1);
       if (cov > 0) cv.put(x, y, c, cov * alpha);
     }
   }
@@ -174,12 +200,12 @@ inline void fillEllipse(Canvas& cv, float cx, float cy, float rx, float ry, RGB 
   cx += cv.tx; cy += cv.ty;
   int x0, y0, x1, y1;
   cv.bounds(cx - rx - 1, cy - ry - 1, cx + rx + 1, cy + ry + 1, x0, y0, x1, y1);
+  const float irx2 = 1 / (rx * rx), iry2 = 1 / (ry * ry);
   for (int y = y0; y < y1; y++) for (int x = x0; x < x1; x++) {
     float u = x + 0.5f - cx, v = y + 0.5f - cy;
-    float F = u * u / (rx * rx) + v * v / (ry * ry) - 1;
-    float gx = 2 * u / (rx * rx), gy = 2 * v / (ry * ry), g = sqrtf(gx * gx + gy * gy);
-    float dd = g > 1e-6f ? F / g : -100.f;
-    float cov = clampf(0.5f - dd, 0, 1);
+    float F = u * u * irx2 + v * v * iry2 - 1;
+    float gx = 2 * u * irx2, gy = 2 * v * iry2;
+    float cov = edgeCov(F, gx * gx + gy * gy);
     if (cov > 0) cv.put(x, y, c, cov * alpha);
   }
 }
@@ -213,7 +239,7 @@ inline void roundRect(Canvas& cv, float x, float y, float w, float h, const floa
     rad = fminf(rad, fminf(hw, hh));
     float dx = fabsf(qx) - (hw - rad), dy = fabsf(qy) - (hh - rad);
     float ox = fmaxf(dx, 0), oy = fmaxf(dy, 0);
-    float dist = sqrtf(ox * ox + oy * oy) + fminf(fmaxf(dx, dy), 0) - rad;
+    float dist = ((ox > 0 && oy > 0) ? sqrtf(ox * ox + oy * oy) : ox + oy) + fminf(fmaxf(dx, dy), 0) - rad;
     if (fa > 0.01f) { float cov = clampf(0.5f - dist, 0, 1); if (cov > 0) cv.put(xx, yy, fc, cov * fa); }
     if (oa > 0.01f && lw > 0) { float cov = clampf(lw * 0.5f + 0.5f - fabsf(dist), 0, 1); if (cov > 0) cv.put(xx, yy, oc, cov * oa); }
   }
@@ -1237,15 +1263,15 @@ private:
         float u = x1r, v = y1r * isy + piv, vv = v - ym;
         float ib2 = vv < 0 ? ibt2 : ibb2;
         float F = u * u * ia2 + vv * vv * ib2 - 1;
-        float gxx = 2 * u * ia2, gyy = 2 * vv * ib2 * isy, g = sqrtf(gxx * gxx + gyy * gyy);
-        float cov = clampf(0.5f - (g > 1e-6f ? F / g : -100.f), 0, 1);
+        float gxx = 2 * u * ia2, gyy = 2 * vv * ib2 * isy;
+        float cov = edgeCov(F, gxx * gxx + gyy * gyy);
         if (cov <= 0) continue;
         RGB col = eyeC;
         if (pupil) {
           float pu = u - px, pv = v - py;
           float Fp = pu * pu * ipa2 + pv * pv * ipb2 - 1;
-          float gpx = 2 * pu * ipa2, gpy = 2 * pv * ipb2 * isy, gp = sqrtf(gpx * gpx + gpy * gpy);
-          float cp = clampf(0.5f - (gp > 1e-6f ? Fp / gp : -100.f), 0, 1) * c[PO];
+          float gpx = 2 * pu * ipa2, gpy = 2 * pv * ipb2 * isy;
+          float cp = edgeCov(Fp, gpx * gpx + gpy * gpy) * c[PO];
           if (cp > 0) col = mix(col, pupC, cp);
         }
         if (lid) {
