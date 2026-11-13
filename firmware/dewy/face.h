@@ -7,6 +7,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <new>
 
 namespace face {
 
@@ -108,6 +109,16 @@ inline uint16_t blend565(uint16_t dst, uint16_t src, uint32_t al) {
   uint32_t v = (r | (r >> 16)) & 0xFFFFu;
   return uint16_t((v >> 8) | (v << 8));
 }
+
+// Optional on-board profiler: the sketch sets profClock to micros(); each part of render() adds its time to profUs.
+// On the PC profClock stays null, so this costs nothing but a branch.
+inline uint32_t (*profClock)() = nullptr;
+inline uint32_t profUs[10] = {};
+struct ProfTimer {
+  int i; uint32_t t0;
+  explicit ProfTimer(int k) : i(k), t0(profClock ? profClock() : 0) {}
+  ~ProfTimer() { if (profClock) profUs[i] += profClock() - t0; }
+};
 
 struct Canvas {
   uint16_t* fb = nullptr;      // W*H byte-swapped RGB565, indexed fb[y * W + x] (for a strip, only its rows exist)
@@ -863,7 +874,8 @@ public:
 
   // ---- draw one frame ----
   void render(Canvas& cv, const char* timeText) {
-    cv.clear(); cv.resetClip();
+    alignas(ProfTimer) char profSlot[sizeof(ProfTimer)];
+    { ProfTimer pt(9); cv.clear(); cv.resetClip(); }
     const float* c = cur;
     const Palette& pal = PALETTES[palIdx];
     RGB eye = hex(pal.eye), pupL = hex(pal.pupilL), pupR = hex(pal.pupilR), blushC = hex(pal.blush), acc = hex(pal.accent);
@@ -879,12 +891,14 @@ public:
 
     float blushA = c[BLUSH] * (0.75f + 0.25f * sinf(t / 190));
     blushA = fmx(blushA, affection * 0.55f);          // a fond buddy has rosy cheeks even at rest
+    { ProfTimer pt(0);
     fillEllipse(cv, 48, 170, 24, 10, blushC, blushA);
-    fillEllipse(cv, 272, 170, 24, 10, blushC, blushA);
+    fillEllipse(cv, 272, 170, 24, 10, blushC, blushA); }
 
-    drawEye(cv, 0, -1, b, s, breath, bounceMul, bounceDy, wobble, jx, jy, dx, dy, eye, pupL);
-    drawEye(cv, 1, 1, b, s, breath, bounceMul, bounceDy, wobble, jx, jy, dx, dy, eye, pupR);
+    { ProfTimer pt(1); drawEye(cv, 0, -1, b, s, breath, bounceMul, bounceDy, wobble, jx, jy, dx, dy, eye, pupL); }
+    { ProfTimer pt(2); drawEye(cv, 1, 1, b, s, breath, bounceMul, bounceDy, wobble, jx, jy, dx, dy, eye, pupR); }
 
+    { ProfTimer pt(3);
     for (int side = 0; side < 2; side++) {
       float cx = side ? c[Rcx] : c[Lcx], closedY = (side ? c[Rcy] : c[Lcy]) + 0.22f * (side ? c[Rh] : c[Lh]);
       float rot = (side ? c[Rrot] : c[Lrot]) * 0.5f * PI_F / 180;
@@ -892,8 +906,10 @@ public:
       if (c[ARCDOWN] > 0.01f) { float bob = 2 * sinf(t / 700); Path p; p.setTransform(cx, closedY + bob, rot); p.moveTo(-50, -6); p.quadTo(0, 22, 50, -6, 16); strokeSegs(cv, p.segs, p.n, 6, eye, c[ARCDOWN]); }
     }
 
-    drawGlasses(cv);
+    }
+    { ProfTimer pt(4); drawGlasses(cv); }
 
+    ProfTimer* pfx = new (profSlot) ProfTimer(5);
     float hp = fmodf(t, 1500) / 1500;
     fillHeart(cv, 278 + 13, 14 - hp * 14 + 22, 21, acc, c[HEART] * (1 - hp));
 
@@ -936,6 +952,8 @@ public:
       if (drawDate) drawDate(cv, eye, c[CLOCKP] * 0.75f, drawDateUser);
     }
 
+    pfx->~ProfTimer();
+    ProfTimer* pmo = new (profSlot) ProfTimer(6);
     if (mouth && updateP < 0) {
       float kc = clampf(c[CAT], 0, 1);
       { Path p; p.setTransform(138, 196, 0); p.moveTo(4, 4); p.quadTo(22, 18, 40, 4); strokeSegs(cv, p.segs, p.n, 5, eye, c[MSMILE] * (1 - kc)); }
@@ -956,10 +974,11 @@ public:
       if (c[MTALK] > 0.01f) { float th = 8 + 16 * lvl; const float rt[4] = { 6, 6, 14, 14 }; roundRect(cv, 146, 194, 28, th - 4, rt, blushC, c[MTALK], eye, 4, c[MTALK]); }
       if (c[MALARM] > 0.01f) { fillEllipse(cv, 160, 204, 15, 12, blushC, c[MALARM]); strokeEllipse(cv, 160, 204, 15, 12, 4, eye, c[MALARM]); }
     }
-    drawPartyHat(cv);
+    pmo->~ProfTimer();
+    { ProfTimer pt(7); drawPartyHat(cv);
     cv.tx = 0; cv.ty = 0;
-    drawOverlays(cv, eye, acc);
-    if (upside) flip180(cv);
+    drawOverlays(cv, eye, acc); }
+    { ProfTimer pt(8); if (upside) flip180(cv); }
   }
 
 private:

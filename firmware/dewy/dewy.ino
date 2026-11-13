@@ -116,6 +116,7 @@ static face::Font fontFrom(const lgfx::GFXfont& f) {
 
 // ---------------- drawing one frame ----------------
 static float drawCostMs = 0;    // the drawing part of it
+static uint32_t profFrames = 0;   // frames since the last "prof reset"
 static float frameCostMs = 0;   // drawing + sending one frame, averaged (the "mem" command shows it)
 // The frame is drawn in strips of BAND_ROWS rows into two small buffers in fast internal RAM. While one strip goes
 // to the screen by DMA, the next is drawn. A whole 150 KB frame in internal RAM left Wi-Fi too little memory, and
@@ -160,6 +161,7 @@ static void drawFrame() {
 #endif
   }
   tft.endWrite();                                           // waits for the last strip
+  profFrames++;
   frameCostMs += ((micros() - t0) / 1000.0f - frameCostMs) * 0.05f;
   drawCostMs += (drawUs / 1000.0f - drawCostMs) * 0.05f;
 }
@@ -632,6 +634,16 @@ static void handleCommand(String raw) {
     if (v == "auto") { simBattery = -1; buddy.setBattery(-1); Serial.println("battery: measured again"); }
     else { simBattery = int(v.toInt()); buddy.setBattery(simBattery); if (simBattery <= 5) buddy.sleep(); Serial.printf("battery: pretending %d%%\n", simBattery); }
   }
+  else if (cmd == "prof reset") { for (auto& u : face::profUs) u = 0; profFrames = 0; Serial.println("prof: counting again"); }
+  else if (cmd == "prof") {
+    if (!profFrames) { Serial.println("prof: no frames yet"); }
+    else {
+      static const char* nm[10] = { "blush", "eyeL", "eyeR", "arcs", "glasses", "effects", "mouth", "overlays", "flip", "clear" };
+      Serial.printf("prof over %u frames, ms per frame:", unsigned(profFrames));
+      for (int i = 0; i < 10; i++) Serial.printf(" %s %.1f", nm[i], face::profUs[i] / 1000.0f / profFrames);
+      Serial.println("");
+    }
+  }
   else if (cmd == "mem") {
     Serial.printf("internal RAM free %u (largest block %u), PSRAM free %u, frame takes %.1f ms of %d ms (drawing %.1f, sending %.1f; %d-row strips, %s)\n",
                   unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)), unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)),
@@ -824,6 +836,7 @@ static void checkRest(uint32_t now) {
 
 // ---------------- setup and loop ----------------
 void setup() {
+  face::profClock = []() -> uint32_t { return micros(); };   // lets the "prof" command time each part of the face
   Serial.begin(115200);
   delay(200);
   Serial.println("\nDewy starting");
