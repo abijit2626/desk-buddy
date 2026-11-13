@@ -97,6 +97,16 @@ static const int NUM_PALETTES = sizeof(PALETTES) / sizeof(PALETTES[0]);
 // ---------------------------------------------------------------- canvas and primitives
 struct Seg { float x0, y0, x1, y1; };
 
+// Blend a packed (byte-swapped RGB565) source over a packed destination with integer maths: al is 0..32.
+// Much cheaper than unpacking to floats, and the 32 steps are finer than the screen's own colour steps.
+inline uint16_t blend565(uint16_t dst, uint16_t src, uint32_t al) {
+  uint32_t d = uint16_t((dst >> 8) | (dst << 8)), sc = uint16_t((src >> 8) | (src << 8));
+  d = (d | (d << 16)) & 0x07E0F81Fu; sc = (sc | (sc << 16)) & 0x07E0F81Fu;
+  uint32_t r = ((((sc - d) * al) >> 5) + d) & 0x07E0F81Fu;
+  uint32_t v = (r | (r >> 16)) & 0xFFFFu;
+  return uint16_t((v >> 8) | (v << 8));
+}
+
 struct Canvas {
   uint16_t* fb = nullptr;      // W*H byte-swapped RGB565, indexed fb[y * W + x] (for a strip, only its rows exist)
   float tx = 0, ty = 0;        // whole-face offset (shake, breathing)
@@ -111,7 +121,7 @@ struct Canvas {
     if (a <= 0.004f || x < cx0 || y < cy0 || x >= cx1 || y >= cy1) return;
     uint16_t* p = fb + y * W + x;
     if (a >= 0.996f) { *p = pack(c); return; }
-    *p = pack(mix(unpack(*p), c, a));
+    *p = blend565(*p, pack(c), uint32_t(a * 32.f + 0.5f));
   }
   // put() along a row with one colour and alpha. Same pixels as calling put() for each x, but a run of
   // equal pixels underneath (the usual case) is blended once, not once per pixel.
@@ -123,11 +133,8 @@ struct Canvas {
     uint16_t* p = fb + y * W + xa;
     uint16_t* e = fb + y * W + xb;
     if (a >= 0.996f) { uint16_t v = pack(c); for (; p <= e; p++) *p = v; return; }
-    uint16_t lastIn = uint16_t(~*p), lastOut = 0;
-    for (; p <= e; p++) {
-      if (*p != lastIn) { lastIn = *p; lastOut = pack(mix(unpack(lastIn), c, a)); }
-      *p = lastOut;
-    }
+    const uint16_t sp = pack(c); const uint32_t al = uint32_t(a * 32.f + 0.5f);
+    for (; p <= e; p++) *p = blend565(*p, sp, al);
   }
   void bounds(float x0, float y0, float x1, float y1, int& ix0, int& iy0, int& ix1, int& iy1) {
     ix0 = int(floorf(x0)); iy0 = int(floorf(y0)); ix1 = int(ceilf(x1)); iy1 = int(ceilf(y1));
@@ -252,7 +259,8 @@ inline void roundRect(Canvas& cv, float x, float y, float w, float h, const floa
   float rmax = 0;
   for (int i = 0; i < 4; i++) rmax = fmaxf(rmax, fminf(r[i], fminf(hw, hh)));
   float edge = fmaxf(0.5f, doLine ? lw * 0.5f + 0.5f : 0.5f);
-  float mOut = edge + 1.0f, mIn = edge + 0.05f;
+  float mOut = edge + 0.01f, mIn = edge + 0.05f;
+  const uint16_t fpk = pack(fc), opk = pack(oc);
   float ex = fabsf(hw * cs) + fabsf(hh * sn) + lw + 2, ey = fabsf(hw * sn) + fabsf(hh * cs) + lw + 2;
   int x0, y0, x1, y1;
   cv.bounds(cx - ex, cy - ey, cx + ex, cy + ey, x0, y0, x1, y1);
@@ -296,8 +304,17 @@ inline void roundRect(Canvas& cv, float x, float y, float w, float h, const floa
       float dx = fabsf(qx) - (hw - rad), dy = fabsf(qy) - (hh - rad);
       float ox = fmaxf(dx, 0), oy = fmaxf(dy, 0);
       float dist = ((ox > 0 && oy > 0) ? sqrtf(ox * ox + oy * oy) : ox + oy) + fminf(fmaxf(dx, dy), 0) - rad;
-      if (doFill) { float cov = clampf(0.5f - dist, 0, 1); if (cov > 0) cv.put(xx, yy, fc, cov * fa); }
-      if (doLine) { float cov = clampf(lw * 0.5f + 0.5f - fabsf(dist), 0, 1); if (cov > 0) cv.put(xx, yy, oc, cov * oa); }
+      uint16_t* pp = cv.fb + yy * W + xx;   // inside the clip: the loops stay within cv.bounds()
+      uint16_t v = *pp;
+      if (doFill) {
+        float cov = clampf(0.5f - dist, 0, 1), al = cov * fa;
+        if (al > 0.004f) v = al >= 0.996f ? fpk : blend565(v, fpk, uint32_t(al * 32.f + 0.5f));
+      }
+      if (doLine) {
+        float cov = clampf(lw * 0.5f + 0.5f - fabsf(dist), 0, 1), al = cov * oa;
+        if (al > 0.004f) v = al >= 0.996f ? opk : blend565(v, opk, uint32_t(al * 32.f + 0.5f));
+      }
+      *pp = v;
     }
   }
 }
@@ -427,10 +444,12 @@ inline void drawString(Canvas& cv, const Font& f, int ss, const char* s, float x
     int gx = penX + g->xo, gy = baseY + g->yo;   // glyph's top-left corner in font pixels
     if (g->w && g->h) {
       int sx0 = floorDiv(gx, ss), sy0 = floorDiv(gy, ss), sx1 = floorDiv(gx + g->w - 1, ss), sy1 = floorDiv(gy + g->h - 1, ss);
+      if (sy0 < cv.cy0) sy0 = cv.cy0;
+      if (sy1 >= cv.cy1) sy1 = cv.cy1 - 1;
+      if (sx0 < cv.cx0) sx0 = cv.cx0;
+      if (sx1 >= cv.cx1) sx1 = cv.cx1 - 1;
       for (int sy = sy0; sy <= sy1; sy++) {
-        if (sy < cv.cy0 || sy >= cv.cy1) continue;
         for (int sx = sx0; sx <= sx1; sx++) {
-          if (sx < cv.cx0 || sx >= cv.cx1) continue;
           int cnt = 0;
           for (int v = 0; v < ss; v++) {
             int by = sy * ss + v - gy;
