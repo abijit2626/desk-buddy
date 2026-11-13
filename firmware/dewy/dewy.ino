@@ -28,6 +28,7 @@
 #include <time.h>
 #include <sys/time.h>
 #include <esp_heap_caps.h>
+#include <esp_memory_utils.h>
 #include "config.h"
 #include "display.h"
 #include "face.h"
@@ -114,6 +115,7 @@ static face::Font fontFrom(const lgfx::GFXfont& f) {
 }
 
 // ---------------- drawing one frame ----------------
+static float frameCostMs = 0;   // drawing + sending one frame, averaged (the "mem" command shows it)
 static void drawFrame() {
   uint32_t now = millis();
   float dt = float(now - lastFrame);
@@ -132,8 +134,10 @@ static void drawFrame() {
     snprintf(hhmm, sizeof hhmm, "%02d:%02d", tmv.tm_hour, tmv.tm_min);
     refreshDateMask();
   }
+  uint32_t t0 = micros();
   buddy.render(canvas, hhmm);
   tft.pushImage(0, 0, face::W, face::H, (lgfx::swap565_t*)canvas.fb);
+  frameCostMs += ((micros() - t0) / 1000.0f - frameCostMs) * 0.05f;
 }
 
 // ---------------- personality: the bond grows with pets, pokes and pick-ups (saved in flash, see bond.h) ----------------
@@ -529,6 +533,7 @@ static void printHelp() {
   Serial.println("Features: 8ball, weather sun|cloud|rain|off|show, timer [minutes] | timer stop,");
   Serial.println("          remind water|stretch, note <text>, bday [own], battery <0-100>|auto,");
   Serial.println("          affection <0-1>, tilt <x> <y>|off, facedown on|off, upside on|off");
+  Serial.println("System:   mem (free RAM and how long a frame takes)");
   Serial.println("Bond:     bond (level and progress), rest on|off (as if switched off in the app), miss on|off");
   Serial.println("Setup:    cal up, cal face, axes, wifi, wifi reset, setup, pair");
 }
@@ -596,6 +601,12 @@ static void handleCommand(String raw) {
     String v = cmd.substring(7, cmd.length()); v.trim();
     if (v == "auto") { simBattery = -1; buddy.setBattery(-1); Serial.println("battery: measured again"); }
     else { simBattery = int(v.toInt()); buddy.setBattery(simBattery); if (simBattery <= 5) buddy.sleep(); Serial.printf("battery: pretending %d%%\n", simBattery); }
+  }
+  else if (cmd == "mem") {
+    Serial.printf("internal RAM free %u (largest block %u), PSRAM free %u, frame takes %.1f ms of %d ms, frame buffer in %s\n",
+                  unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)), unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)),
+                  unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)), frameCostMs, FRAME_MS,
+                  esp_ptr_external_ram(canvas.fb) ? "PSRAM" : "internal RAM");
   }
   else if (cmd == "bond") {
     float a = bondNow();
@@ -790,9 +801,11 @@ void setup() {
   tft.setBrightness(0);
   tft.fillScreen(TFT_BLACK);
 
-  // one full 320 x 240 frame (150 KB). Internal RAM is fastest; PSRAM is the fallback.
-  canvas.fb = (uint16_t*)heap_caps_malloc(face::W * face::H * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-  if (!canvas.fb) canvas.fb = (uint16_t*)heap_caps_malloc(face::W * face::H * 2, MALLOC_CAP_SPIRAM);
+  // one full 320 x 240 frame (150 KB). In PSRAM by default: Wi-Fi, the setup hotspot and HTTPS need the internal RAM.
+  const size_t fbBytes = face::W * face::H * 2;
+  canvas.fb = FRAME_IN_PSRAM ? (uint16_t*)heap_caps_malloc(fbBytes, MALLOC_CAP_SPIRAM) : nullptr;
+  if (!canvas.fb) canvas.fb = (uint16_t*)heap_caps_malloc(fbBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  if (!canvas.fb) canvas.fb = (uint16_t*)heap_caps_malloc(fbBytes, MALLOC_CAP_SPIRAM);
   if (!canvas.fb) { Serial.println("Not enough memory for the frame buffer"); while (true) delay(1000); }
 
   prefs.begin("buddy", false);

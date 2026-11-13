@@ -7,6 +7,7 @@
 #include <cstdarg>
 #include <ctime>
 inline uint32_t millis() { static uint32_t t = 0; return t += 7; }
+inline uint32_t micros() { static uint32_t t = 0; return t += 7000; }
 inline int g_delayCalls = 0;   // tests count how often the code really sleeps
 inline void delay(uint32_t) { g_delayCalls++; }
 inline uint32_t esp_random() { return 1; }
