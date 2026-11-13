@@ -148,8 +148,12 @@ static void drawFrame() {
     canvas.fb = buf - sy0 * face::W;                        // so fb[y * W + x] lands in this strip for its rows
     canvas.bandY0 = sy0; canvas.bandY1 = sy0 + rows;
     buddy.render(canvas, hhmm);
+#if SCREEN_DMA
     tft.waitDMA();                                          // the previous strip has finished sending
     tft.pushImageDMA(0, y0, face::W, rows, (lgfx::swap565_t*)buf);
+#else
+    tft.pushImage(0, y0, face::W, rows, (lgfx::swap565_t*)buf);
+#endif
   }
   tft.endWrite();                                           // waits for the last strip
   frameCostMs += ((micros() - t0) / 1000.0f - frameCostMs) * 0.05f;

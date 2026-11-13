@@ -114,6 +114,9 @@
 #endif
 
 #define FRAME_MS        33         // about 30 frames a second
+#ifndef SCREEN_DMA
+#define SCREEN_DMA      1          // send each strip by DMA while the next is drawn. 0 = plain blocking sends
+#endif
 #define BAND_ROWS       48         // the frame is drawn in strips this tall (2 x 30 KB of internal RAM). Fewer rows
                                    // use less RAM; more rows draw a little faster
 
