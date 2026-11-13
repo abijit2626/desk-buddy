@@ -400,15 +400,15 @@ inline void fillConvex(Canvas& cv, const float* xy, int n, RGB c, float alpha) {
   // (the pixels in between are the anti-aliased edge, worked out one by one). Only edge pixels pay for the maths.
   float inx[8];
   for (int i = 0; i < n; i++) inx[i] = fabsf(nx[i]) > 1e-6f ? 1.f / nx[i] : 0.f;
-  const float EPS = 1e-3f;
+  const float EDGE_EPS = 1e-3f;
   for (int y = y0; y < y1; y++) {
     float py = y + 0.5f;
     float eLo = float(x0), eHi = float(x1 - 1), sLo = float(x0), sHi = float(x1 - 1);
     bool any = true, solid = true;
     for (int i = 0; i < n; i++) {
       float base = ny[i] * py - d0[i];                    // this edge's d = nx * px + base
-      if (inx[i] == 0.f) { if (base > 0.5f + EPS) any = false; if (base > -0.5f - EPS) solid = false; continue; }
-      float pe = (0.5f + EPS - base) * inx[i] - 0.5f, ps = (-0.5f - EPS - base) * inx[i] - 0.5f;   // x where d crosses the limits
+      if (inx[i] == 0.f) { if (base > 0.5f + EDGE_EPS) any = false; if (base > -0.5f - EDGE_EPS) solid = false; continue; }
+      float pe = (0.5f + EDGE_EPS - base) * inx[i] - 0.5f, ps = (-0.5f - EDGE_EPS - base) * inx[i] - 0.5f;   // x where d crosses the limits
       if (nx[i] > 0) { eHi = fmn(eHi, floorf(pe)); sHi = fmn(sHi, floorf(ps)); }
       else { eLo = fmx(eLo, ceilf(pe)); sLo = fmx(sLo, ceilf(ps)); }
     }
