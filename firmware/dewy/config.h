@@ -2,6 +2,21 @@
 #pragma once
 
 // ---------------- pins (your wiring table) ----------------
+#if DEWY_ETH_BOARD
+// Test build for the spare Waveshare ESP32-S3-ETH. Its Ethernet chip is wired to GPIO 9-14 and the SD card to 4-7,
+// so the screen moves to free header pins. Build with: --build-property "compiler.cpp.extra_flags=-DDEWY_ETH_BOARD=1"
+#define PIN_TFT_MOSI    1   // also touch T_DIN
+#define PIN_TFT_SCLK    2   // also touch T_CLK
+#define PIN_TFT_MISO    3   // also touch T_DOUT
+#define PIN_TFT_CS     39
+#define PIN_TFT_DC     40
+#define PIN_TFT_RST    41
+#define PIN_TFT_BL     42
+#define PIN_TOUCH_CS   47
+#define PIN_TOUCH_IRQ  48
+#define PIN_I2C_SDA    44   // motion sensor, if you test it on this board too
+#define PIN_I2C_SCL    43
+#else
 #define PIN_TFT_MOSI   11   // also touch T_DIN
 #define PIN_TFT_SCLK   12   // also touch T_CLK
 #define PIN_TFT_MISO   13   // also touch T_DOUT
@@ -13,6 +28,7 @@
 #define PIN_TOUCH_IRQ   6
 #define PIN_I2C_SDA     4   // GY-87
 #define PIN_I2C_SCL     5
+#endif
 
 // ---------------- screen ----------------
 #define SCREEN_ROTATION 1          // 1 or 3. If the face is upside down, change it to the other one.
