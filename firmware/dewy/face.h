@@ -1255,32 +1255,129 @@ private:
     cv.bounds(minx - 2, miny - 2, maxx + 2, maxy + 2, x0, y0, x1, y1);
     const RGB black = { 0, 0, 0 };
     float ia2 = 1 / (a * a), ibt2 = 1 / (bt * bt), ibb2 = 1 / (bb * bb), ipa2 = 1 / (pra * pra), ipb2 = 1 / (prb * prb), isy = 1 / sy;
+    // Most pixels of an eye are plain eye colour or plain pupil colour. Each row works out its solid spans once (the
+    // shapes are convex, so a binary search finds their ends) and fills them with ready-made colours; only the few
+    // edge pixels run the full maths. Rows where that shortcut can't be trusted fall back to the full maths throughout.
+    const bool opaque = eyeOp >= 0.996f;
+    const float po = c[PO];
+    const uint16_t pkEye = pack(eyeC), pkPup = pack(mix(eyeC, pupC, po));
+    const float kx = -sr * isy;                                   // how fast v changes along a row
+    const float pM = fmaxf(ipa2, ipb2 * isy * isy), pS = (sqrtf(pM) + sqrtf(pM + 4)) * 0.5f, pFar = pS * pS * 1.02f + 0.01f;
+    const float pDen = cr * cr * ipa2 + kx * kx * ipb2;
+    int hintL = -1, hintR = -1;                                    // last row's solid span: this row's is close by
     for (int y = y0; y < y1; y++) {
       float Y = y + 0.5f - pivY;
-      for (int x = x0; x < x1; x++) {
+      auto outer = [&](int x) -> float {
         float X = x + 0.5f - pivX;
         float x1r = X * cr + Y * sr, y1r = -X * sr + Y * cr;
         float u = x1r, v = y1r * isy + piv, vv = v - ym;
         float ib2 = vv < 0 ? ibt2 : ibb2;
         float F = u * u * ia2 + vv * vv * ib2 - 1;
         float gxx = 2 * u * ia2, gyy = 2 * vv * ib2 * isy;
-        float cov = edgeCov(F, gxx * gxx + gyy * gyy);
-        if (cov <= 0) continue;
-        RGB col = eyeC;
-        if (pupil) {
-          float pu = u - px, pv = v - py;
-          float Fp = pu * pu * ipa2 + pv * pv * ipb2 - 1;
-          float gpx = 2 * pu * ipa2, gpy = 2 * pv * ipb2 * isy;
-          float cp = edgeCov(Fp, gpx * gpx + gpy * gpy) * c[PO];
-          if (cp > 0) col = mix(col, pupC, cp);
+        return edgeCov(F, gxx * gxx + gyy * gyy);
+      };
+      auto pup = [&](int x) -> float {
+        float X = x + 0.5f - pivX;
+        float x1r = X * cr + Y * sr, y1r = -X * sr + Y * cr;
+        float u = x1r, v = y1r * isy + piv;
+        float pu = u - px, pv = v - py;
+        float Fp = pu * pu * ipa2 + pv * pv * ipb2 - 1;
+        float gpx = 2 * pu * ipa2, gpy = 2 * pv * ipb2 * isy;
+        return edgeCov(Fp, gpx * gpx + gpy * gpy);
+      };
+      // ---- the eye's own outline on this row: solid span [sL, sR] inside the drawn span [eL, eR]
+      int sL = 1, sR = 0, eL = x0, eR = x1 - 1;
+      if (eL > eR) continue;
+      {
+        float uY = Y * sr, vvY = Y * cr * isy + piv - ym, Xm;
+        float Xt = -(uY * cr * ia2 + vvY * kx * ibt2) / (cr * cr * ia2 + kx * kx * ibt2);
+        if (vvY + kx * Xt < 0) Xm = Xt;
+        else {
+          float Xb = -(uY * cr * ia2 + vvY * kx * ibb2) / (cr * cr * ia2 + kx * kx * ibb2);
+          Xm = (vvY + kx * Xb >= 0 || fabsf(kx) < 1e-9f) ? Xb : -vvY / kx;
         }
-        if (lid) {
-          float qy = v - lidY0, qyr = -u * ls + qy * lc;
-          float cl = clampf(0.5f - qyr * sy, 0, 1);
-          if (cl > 0) col = mix(col, black, cl);
+        float fm = Xm + pivX - 0.5f;
+        int xm = fm < float(x0) ? x0 : (fm > float(x1 - 1) ? x1 - 1 : int(fm + 0.5f));
+        if (outer(xm) == 1.f) {
+          // left end of the solid span: somewhere in [lo, hi], hi is solid. Start near last row's end and step outwards.
+          int lo = x0, hi = xm;
+          if (hintL >= 0) {
+            int h = hintL < x0 ? x0 : (hintL > xm ? xm : hintL);
+            if (outer(h) == 1.f) { hi = h; for (int st = 1, q = h - 1; q >= x0; st <<= 1, q -= st) { if (outer(q) == 1.f) hi = q; else { lo = q + 1; break; } } }
+            else { lo = h + 1; for (int st = 1, q = h + 1; q < xm; st <<= 1, q += st) { if (outer(q) == 1.f) { hi = q; break; } lo = q + 1; } }
+          }
+          while (lo < hi) { int mid = (lo + hi) >> 1; if (outer(mid) == 1.f) hi = mid; else lo = mid + 1; }
+          sL = lo; lo = xm; hi = x1 - 1;
+          if (hintR >= 0) {
+            int h = hintR > x1 - 1 ? x1 - 1 : (hintR < xm ? xm : hintR);
+            if (outer(h) == 1.f) { lo = h; for (int st = 1, q = h + 1; q <= x1 - 1; st <<= 1, q += st) { if (outer(q) == 1.f) lo = q; else { hi = q - 1; break; } } }
+            else { hi = h - 1; for (int st = 1, q = h - 1; q > xm; st <<= 1, q -= st) { if (outer(q) == 1.f) { lo = q; break; } hi = q - 1; } }
+          }
+          while (lo < hi) { int mid = (lo + hi + 1) >> 1; if (outer(mid) == 1.f) lo = mid; else hi = mid - 1; }
+          sR = lo; hintL = sL; hintR = sR;
+          eL = sL; for (int x = sL - 1, z = 0; x >= x0 && z < 3; x--) { if (outer(x) > 0) { eL = x; z = 0; } else z++; }
+          eR = sR; for (int x = sR + 1, z = 0; x < x1 && z < 3; x++) { if (outer(x) > 0) { eR = x; z = 0; } else z++; }
         }
-        cv.put(x, y, col, cov * eyeOp);
       }
+      // ---- the pupil on this row: 0 = none, 1 = spans (solid [psL, psR] inside [pL, pR]), 2 = work out every pixel
+      int pmode = 0, pL = 0, pR = -1, psL = 1, psR = 0;
+      if (pupil) {
+        float pu0 = Y * sr - px, pv0 = Y * cr * isy + piv - py;
+        float Xp = pDen > 1e-12f ? -(pu0 * cr * ipa2 + pv0 * kx * ipb2) / pDen : 0;
+        float pum = pu0 + cr * Xp, pvm = pv0 + kx * Xp;
+        if (!(pum * pum * ipa2 + pvm * pvm * ipb2 >= pFar)) {      // not clearly off this row
+          float fm = Xp + pivX - 0.5f;
+          int pm = fm < float(eL) ? eL : (fm > float(eR) ? eR : int(fm + 0.5f));
+          if (pup(pm) == 1.f) {
+            pmode = 1;
+            int lo = eL, hi = pm;
+            while (lo < hi) { int mid = (lo + hi) >> 1; if (pup(mid) == 1.f) hi = mid; else lo = mid + 1; }
+            psL = lo; lo = pm; hi = eR;
+            while (lo < hi) { int mid = (lo + hi + 1) >> 1; if (pup(mid) == 1.f) lo = mid; else hi = mid - 1; }
+            psR = lo;
+            pL = psL; for (int x = psL - 1, z = 0; x >= eL && z < 3; x--) { if (pup(x) > 0) { pL = x; z = 0; } else z++; }
+            pR = psR; for (int x = psR + 1, z = 0; x <= eR && z < 3; x++) { if (pup(x) > 0) { pR = x; z = 0; } else z++; }
+          } else pmode = 2;
+        }
+      }
+      uint16_t* row = cv.fb + y * W;
+      auto pixel = [&](int x) {                                    // the full maths for one pixel
+        float cov = (x >= sL && x <= sR) ? 1.f : outer(x);
+        if (cov <= 0) return;
+        float cp = 0;
+        if (pmode == 1) { if (x >= pL && x <= pR) cp = (x >= psL && x <= psR) ? po : pup(x) * po; }
+        else if (pmode == 2) cp = pup(x) * po;
+        float cl = 0;
+        if (lid) {
+          float X = x + 0.5f - pivX;
+          float x1r = X * cr + Y * sr, y1r = -X * sr + Y * cr;
+          float u = x1r, v = y1r * isy + piv;
+          float qy = v - lidY0, qyr = -u * ls + qy * lc;
+          cl = clampf(0.5f - qyr * sy, 0, 1);
+        }
+        if (opaque && cov == 1.f && cl <= 0) {
+          if (cp <= 0) { row[x] = pkEye; return; }
+          if (cp == po) { row[x] = pkPup; return; }
+        }
+        RGB col = eyeC;
+        if (cp > 0) col = mix(col, pupC, cp);
+        if (cl > 0) col = mix(col, black, cl);
+        cv.put(x, y, col, cov * eyeOp);
+      };
+      if (!opaque || lid || pmode == 2 || sL > sR) { for (int x = eL; x <= eR; x++) pixel(x); continue; }
+      // the usual case: edge pixels one by one, everything between them in plain runs
+      auto run = [&](int a0, int b0, uint16_t pk) { for (int x = a0; x <= b0; x++) row[x] = pk; };
+      for (int x = eL; x < sL; x++) pixel(x);
+      if (pmode == 0 || pR < sL || pL > sR) run(sL, sR, pkEye);
+      else {
+        int a1 = pL > sL ? pL : sL, b1 = pR < sR ? pR : sR;          // the pupil's part of the solid span
+        int a2 = psL > a1 ? psL : a1, b2 = psR < b1 ? psR : b1;      // and its solid middle
+        run(sL, a1 - 1, pkEye);
+        if (a2 > b2) { for (int x = a1; x <= b1; x++) pixel(x); }
+        else { for (int x = a1; x < a2; x++) pixel(x); run(a2, b2, pkPup); for (int x = b2 + 1; x <= b1; x++) pixel(x); }
+        run(b1 + 1, sR, pkEye);
+      }
+      for (int x = sR + 1; x <= eR; x++) pixel(x);
     }
     // dizzy spiral
     if (c[SO] > 0.01f) {
