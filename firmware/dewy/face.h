@@ -1397,9 +1397,13 @@ private:
     const float pM = fmx(ipa2, ipb2 * isy * isy), pS = (sqrtf(pM) + sqrtf(pM + 4)) * 0.5f, pFar = pS * pS * 1.02f + 0.01f;
     const float pDen = cr * cr * ipa2 + kx * kx * ipb2;
     int hintL = -1, hintR = -1;                                    // last row's solid span: this row's is close by
+    // A row looks at the same pixels several times (searching for span ends, scanning the edge, then drawing it), so the
+    // coverage of each is remembered for the row. Only loop() draws, so one set of tables is enough.
+    static float ocv[W], pcv[W]; static uint32_t ost[W], pst[W], stamp = 0;
     for (int y = y0; y < y1; y++) {
+      if (++stamp == 0) { memset(ost, 0, sizeof ost); memset(pst, 0, sizeof pst); stamp = 1; }
       float Y = y + 0.5f - pivY;
-      auto outer = [&](int x) -> float {
+      auto outerRaw = [&](int x) -> float {
         float X = x + 0.5f - pivX;
         float x1r = X * cr + Y * sr, y1r = -X * sr + Y * cr;
         float u = x1r, v = y1r * isy + piv, vv = v - ym;
@@ -1408,7 +1412,8 @@ private:
         float gxx = 2 * u * ia2, gyy = 2 * vv * ib2 * isy;
         return edgeCov(F, gxx * gxx + gyy * gyy);
       };
-      auto pup = [&](int x) -> float {
+      auto outer = [&](int x) -> float { if (ost[x] == stamp) return ocv[x]; float v = outerRaw(x); ost[x] = stamp; ocv[x] = v; return v; };
+      auto pupRaw = [&](int x) -> float {
         float X = x + 0.5f - pivX;
         float x1r = X * cr + Y * sr, y1r = -X * sr + Y * cr;
         float u = x1r, v = y1r * isy + piv;
@@ -1417,6 +1422,7 @@ private:
         float gpx = 2 * pu * ipa2, gpy = 2 * pv * ipb2 * isy;
         return edgeCov(Fp, gpx * gpx + gpy * gpy);
       };
+      auto pup = [&](int x) -> float { if (pst[x] == stamp) return pcv[x]; float v = pupRaw(x); pst[x] = stamp; pcv[x] = v; return v; };
       // ---- the eye's own outline on this row: solid span [sL, sR] inside the drawn span [eL, eR]
       int sL = 1, sR = 0, eL = x0, eR = x1 - 1;
       if (eL > eR) continue;
@@ -1430,7 +1436,19 @@ private:
         }
         float fm = Xm + pivX - 0.5f;
         int xm = fm < float(x0) ? x0 : (fm > float(x1 - 1) ? x1 - 1 : int(fm + 0.5f));
-        if (outer(xm) == 1.f) {
+        float om = outer(xm);
+        if (om != 1.f) {
+          // no fully covered pixel at the row's best point: the row is empty, or a thin sliver around it
+          float best = om; int bx = xm;
+          for (int dxm = 1; dxm <= 3; dxm++) {
+            if (xm - dxm >= x0) { float v = outer(xm - dxm); if (v > best) { best = v; bx = xm - dxm; } }
+            if (xm + dxm < x1) { float v = outer(xm + dxm); if (v > best) { best = v; bx = xm + dxm; } }
+          }
+          if (best <= 0) continue;                                   // nothing of the eye on this row
+          eL = eR = bx;
+          for (int x = bx - 1, z = 0; x >= x0 && z < 3; x--) { if (outer(x) > 0) { eL = x; z = 0; } else z++; }
+          for (int x = bx + 1, z = 0; x < x1 && z < 3; x++) { if (outer(x) > 0) { eR = x; z = 0; } else z++; }
+        } else {
           // left end of the solid span: somewhere in [lo, hi], hi is solid. Start near last row's end and step outwards.
           int lo = x0, hi = xm;
           if (hintL >= 0) {
@@ -1496,18 +1514,41 @@ private:
         if (cl > 0) col = mix(col, black, cl);
         cv.put(x, y, col, cov * eyeOp);
       };
-      if (!opaque || lid || pmode == 2 || sL > sR) { for (int x = eL; x <= eR; x++) pixel(x); continue; }
+      if (!opaque || pmode == 2 || sL > sR) { for (int x = eL; x <= eR; x++) pixel(x); continue; }
       // the usual case: edge pixels one by one, everything between them in plain runs
       auto run = [&](int a0, int b0, uint16_t pk) { for (int x = a0; x <= b0; x++) row[x] = pk; };
-      for (int x = eL; x < sL; x++) pixel(x);
-      if (pmode == 0 || pR < sL || pL > sR) run(sL, sR, pkEye);
-      else {
-        int a1 = pL > sL ? pL : sL, b1 = pR < sR ? pR : sR;          // the pupil's part of the solid span
-        int a2 = psL > a1 ? psL : a1, b2 = psR < b1 ? psR : b1;      // and its solid middle
-        run(sL, a1 - 1, pkEye);
+      // a stretch of the solid span with no lid on it: eye colour, with the pupil's solid middle in its own colour
+      auto eyeSpan = [&](int sa, int sb) {
+        if (sa > sb) return;
+        if (pmode == 0 || pR < sa || pL > sb) { run(sa, sb, pkEye); return; }
+        int a1 = pL > sa ? pL : sa, b1 = pR < sb ? pR : sb;           // the pupil's part of the stretch
+        int a2 = psL > a1 ? psL : a1, b2 = psR < b1 ? psR : b1;       // and its solid middle
+        run(sa, a1 - 1, pkEye);
         if (a2 > b2) { for (int x = a1; x <= b1; x++) pixel(x); }
         else { for (int x = a1; x < a2; x++) pixel(x); run(a2, b2, pkPup); for (int x = b2 + 1; x <= b1; x++) pixel(x); }
-        run(b1 + 1, sR, pkEye);
+        run(b1 + 1, sb, pkEye);
+      };
+      for (int x = eL; x < sL; x++) pixel(x);
+      if (!lid) eyeSpan(sL, sR);
+      else {
+        // The lid is a straight cut across the row: g(x) = sy * (a0 + a1 * X) is its signed distance. Lid-free where
+        // g >= 0.5, all lid (black) where g <= -0.5, and only the few pixels between need the full maths.
+        float la1 = (-cr * ls - sr * isy * lc) * sy, la0 = (-Y * sr * ls + (Y * cr * isy + piv - lidY0) * lc) * sy;
+        const float M = 0.5f + 1e-3f;
+        int fl = sR + 1, fr = sR, ul = sR + 1, ur = sR;               // free stretch [fl, fr], black stretch [ul, ur]
+        if (fabsf(la1) < 1e-7f) { if (la0 >= M) { fl = sL; fr = sR; } else if (la0 <= -M) { ul = sL; ur = sR; } }
+        else {
+          float inv = 1.f / la1, sh = pivX - 0.5f;
+          float xf = ceilf((M - la0) * inv + sh), xu = floorf((-M - la0) * inv + sh);   // where g crosses +M and -M, rising if la1 > 0
+          if (la1 > 0) { fl = int(fmx(xf, float(sL))); fr = sR; ul = sL; ur = int(fmn(xu, float(sR))); }
+          else { xf = floorf((M - la0) * inv + sh); xu = ceilf((-M - la0) * inv + sh); fl = sL; fr = int(fmn(xf, float(sR))); ul = int(fmx(xu, float(sL))); ur = sR; }
+        }
+        int x = sL;
+        while (x <= sR) {                                              // walk the row: free stretch, black stretch or edge pixel
+          if (x >= fl && x <= fr) { eyeSpan(x, fr); x = fr + 1; }
+          else if (x >= ul && x <= ur) { run(x, ur, 0); x = ur + 1; }  // pack(black) is 0
+          else { pixel(x); x++; }
+        }
       }
       for (int x = sR + 1; x <= eR; x++) pixel(x);
     }
