@@ -113,6 +113,22 @@ struct Canvas {
     if (a >= 0.996f) { *p = pack(c); return; }
     *p = pack(mix(unpack(*p), c, a));
   }
+  // put() along a row with one colour and alpha. Same pixels as calling put() for each x, but a run of
+  // equal pixels underneath (the usual case) is blended once, not once per pixel.
+  inline void fillRun(int xa, int xb, int y, RGB c, float a) {   // xa..xb inclusive
+    if (a <= 0.004f || y < cy0 || y >= cy1) return;
+    if (xa < cx0) xa = cx0;
+    if (xb > cx1 - 1) xb = cx1 - 1;
+    if (xa > xb) return;
+    uint16_t* p = fb + y * W + xa;
+    uint16_t* e = fb + y * W + xb;
+    if (a >= 0.996f) { uint16_t v = pack(c); for (; p <= e; p++) *p = v; return; }
+    uint16_t lastIn = uint16_t(~*p), lastOut = 0;
+    for (; p <= e; p++) {
+      if (*p != lastIn) { lastIn = *p; lastOut = pack(mix(unpack(lastIn), c, a)); }
+      *p = lastOut;
+    }
+  }
   void bounds(float x0, float y0, float x1, float y1, int& ix0, int& iy0, int& ix1, int& iy1) {
     ix0 = int(floorf(x0)); iy0 = int(floorf(y0)); ix1 = int(ceilf(x1)); iy1 = int(ceilf(y1));
     if (ix0 < cx0) ix0 = cx0;
@@ -229,19 +245,60 @@ inline void strokeEllipse(Canvas& cv, float cx, float cy, float rx, float ry, fl
 inline void roundRect(Canvas& cv, float x, float y, float w, float h, const float r[4], RGB fc, float fa, RGB oc, float lw, float oa, float rotDeg = 0) {
   if (fa < 0.01f && oa < 0.01f) return;
   float cx = x + w / 2 + cv.tx, cy = y + h / 2 + cv.ty, hw = w / 2, hh = h / 2;
-  float cs = cosf(rotDeg * PI_F / 180), sn = sinf(rotDeg * PI_F / 180), ext = sqrtf(hw * hw + hh * hh) + lw + 2;
+  float cs = cosf(rotDeg * PI_F / 180), sn = sinf(rotDeg * PI_F / 180);
+  bool doFill = fa > 0.01f, doLine = oa > 0.01f && lw > 0;
+  // Only pixels near the edge need the full distance maths. Each row is cut into:
+  // outside (skipped), the edge band (worked out exactly as before), and the solid middle (just filled).
+  float rmax = 0;
+  for (int i = 0; i < 4; i++) rmax = fmaxf(rmax, fminf(r[i], fminf(hw, hh)));
+  float edge = fmaxf(0.5f, doLine ? lw * 0.5f + 0.5f : 0.5f);
+  float mOut = edge + 1.0f, mIn = edge + 0.05f;
+  float ex = fabsf(hw * cs) + fabsf(hh * sn) + lw + 2, ey = fabsf(hw * sn) + fabsf(hh * cs) + lw + 2;
   int x0, y0, x1, y1;
-  cv.bounds(cx - ext, cy - ext, cx + ext, cy + ext, x0, y0, x1, y1);
-  for (int yy = y0; yy < y1; yy++) for (int xx = x0; xx < x1; xx++) {
-    float px = xx + 0.5f - cx, py = yy + 0.5f - cy;
-    float qx = px * cs + py * sn, qy = -px * sn + py * cs;           // into the box's frame
-    float rad = qx < 0 ? (qy < 0 ? r[0] : r[3]) : (qy < 0 ? r[1] : r[2]);
-    rad = fminf(rad, fminf(hw, hh));
-    float dx = fabsf(qx) - (hw - rad), dy = fabsf(qy) - (hh - rad);
-    float ox = fmaxf(dx, 0), oy = fmaxf(dy, 0);
-    float dist = ((ox > 0 && oy > 0) ? sqrtf(ox * ox + oy * oy) : ox + oy) + fminf(fmaxf(dx, dy), 0) - rad;
-    if (fa > 0.01f) { float cov = clampf(0.5f - dist, 0, 1); if (cov > 0) cv.put(xx, yy, fc, cov * fa); }
-    if (oa > 0.01f && lw > 0) { float cov = clampf(lw * 0.5f + 0.5f - fabsf(dist), 0, 1); if (cov > 0) cv.put(xx, yy, oc, cov * oa); }
+  cv.bounds(cx - ex, cy - ey, cx + ex, cy + ey, x0, y0, x1, y1);
+  float ics = fabsf(cs) > 1e-6f ? 1.f / cs : 0, isn = fabsf(sn) > 1e-6f ? 1.f / sn : 0;
+  // px range on this row where |qx| <= A and |qy| <= B (qx = px*cs + py*sn, qy = py*cs - px*sn)
+  auto span = [&](float A, float B, float py, float& lo, float& hi) -> bool {
+    if (A < 0 || B < 0) return false;
+    lo = -1e9f; hi = 1e9f;
+    if (ics != 0) { float a = (-A - py * sn) * ics, b = (A - py * sn) * ics; lo = fmaxf(lo, fminf(a, b)); hi = fminf(hi, fmaxf(a, b)); }
+    else if (fabsf(py * sn) > A) return false;
+    if (isn != 0) { float a = (py * cs + B) * isn, b = (py * cs - B) * isn; lo = fmaxf(lo, fminf(a, b)); hi = fminf(hi, fmaxf(a, b)); }
+    else if (fabsf(py * cs) > B) return false;
+    return lo <= hi;
+  };
+  float off = cx - 0.5f;   // xx = px + off
+  for (int yy = y0; yy < y1; yy++) {
+    float py = yy + 0.5f - cy, lo, hi;
+    if (!span(hw + mOut, hh + mOut, py, lo, hi)) continue;
+    int xs = int(floorf(lo + off)) - 1, xe = int(ceilf(hi + off)) + 1;
+    if (xs < x0) xs = x0;
+    if (xe > x1 - 1) xe = x1 - 1;
+    // solid middle: the union of the two arms of the rounded box's cross, shrunk by the edge band
+    int is = 1, ie = 0;
+    float l1, h1, l2, h2;
+    bool a1 = span(hw - mIn, fminf(hh - rmax, hh - mIn), py, l1, h1);
+    bool a2 = span(fminf(hw - rmax, hw - mIn), hh - mIn, py, l2, h2);
+    if (a1 && a2 && l2 <= h1 && l1 <= h2) { l1 = fminf(l1, l2); h1 = fmaxf(h1, h2); }
+    else if (a2 && (!a1 || h2 - l2 > h1 - l1)) { l1 = l2; h1 = h2; a1 = true; }
+    if (a1) { is = int(ceilf(l1 + off)); ie = int(floorf(h1 + off)); }
+    for (int xx = xs; xx <= xe; xx++) {
+      if (xx >= is && xx <= ie) {
+        int e = ie < xe ? ie : xe;
+        if (doFill) cv.fillRun(xx, e, yy, fc, fa);
+        xx = e;
+        continue;
+      }
+      float px = xx + 0.5f - cx;
+      float qx = px * cs + py * sn, qy = -px * sn + py * cs;           // into the box's frame
+      float rad = qx < 0 ? (qy < 0 ? r[0] : r[3]) : (qy < 0 ? r[1] : r[2]);
+      rad = fminf(rad, fminf(hw, hh));
+      float dx = fabsf(qx) - (hw - rad), dy = fabsf(qy) - (hh - rad);
+      float ox = fmaxf(dx, 0), oy = fmaxf(dy, 0);
+      float dist = ((ox > 0 && oy > 0) ? sqrtf(ox * ox + oy * oy) : ox + oy) + fminf(fmaxf(dx, dy), 0) - rad;
+      if (doFill) { float cov = clampf(0.5f - dist, 0, 1); if (cov > 0) cv.put(xx, yy, fc, cov * fa); }
+      if (doLine) { float cov = clampf(lw * 0.5f + 0.5f - fabsf(dist), 0, 1); if (cov > 0) cv.put(xx, yy, oc, cov * oa); }
+    }
   }
 }
 
