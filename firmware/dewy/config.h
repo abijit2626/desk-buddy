@@ -32,7 +32,9 @@
 
 // ---------------- screen ----------------
 #define SCREEN_ROTATION 1          // 1 or 3. If the face is upside down, change it to the other one.
-#define SPI_FREQ        40000000   // 40 MHz is safe on jumper wires
+#ifndef SPI_FREQ
+#define SPI_FREQ        40000000   // 40 MHz is safe on jumper wires. 80 MHz halves the time to send a frame
+#endif                             // (try -DSPI_FREQ=80000000; back to 40 if the picture glitches)
 #define BRIGHTNESS_AWAKE 255
 #define BRIGHTNESS_ASLEEP 40       // screen dims while it sleeps
 

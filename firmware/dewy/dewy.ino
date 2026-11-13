@@ -29,6 +29,7 @@
 #include <sys/time.h>
 #include <esp_heap_caps.h>
 #include <esp_memory_utils.h>
+#include <esp_cache.h>
 #include "config.h"
 #include "display.h"
 #include "face.h"
@@ -115,7 +116,8 @@ static face::Font fontFrom(const lgfx::GFXfont& f) {
 }
 
 // ---------------- drawing one frame ----------------
-static float frameCostMs = 0;   // drawing + sending one frame, averaged (the "mem" command shows it)
+static float frameCostMs = 0;
+static bool fbInPsram = false;   // drawing + sending one frame, averaged (the "mem" command shows it)
 static void drawFrame() {
   uint32_t now = millis();
   float dt = float(now - lastFrame);
@@ -136,6 +138,9 @@ static void drawFrame() {
   }
   uint32_t t0 = micros();
   buddy.render(canvas, hhmm);
+  // A frame in PSRAM is written through the CPU cache, but the screen transfer reads PSRAM itself: write the cache
+  // back first, or parts of the old frame show through as stripes (seen on the first board when the face woke up).
+  if (fbInPsram) esp_cache_msync(canvas.fb, size_t(face::W) * face::H * 2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
   tft.pushImage(0, 0, face::W, face::H, (lgfx::swap565_t*)canvas.fb);
   frameCostMs += ((micros() - t0) / 1000.0f - frameCostMs) * 0.05f;
 }
@@ -812,10 +817,11 @@ void setup() {
 
   // one full 320 x 240 frame (150 KB). In PSRAM by default: Wi-Fi, the setup hotspot and HTTPS need the internal RAM.
   const size_t fbBytes = face::W * face::H * 2;
-  canvas.fb = FRAME_IN_PSRAM ? (uint16_t*)heap_caps_malloc(fbBytes, MALLOC_CAP_SPIRAM) : nullptr;
+  canvas.fb = FRAME_IN_PSRAM ? (uint16_t*)heap_caps_aligned_alloc(64, fbBytes, MALLOC_CAP_SPIRAM) : nullptr;
   if (!canvas.fb) canvas.fb = (uint16_t*)heap_caps_malloc(fbBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   if (!canvas.fb) canvas.fb = (uint16_t*)heap_caps_malloc(fbBytes, MALLOC_CAP_SPIRAM);
   if (!canvas.fb) { Serial.println("Not enough memory for the frame buffer"); while (true) delay(1000); }
+  fbInPsram = esp_ptr_external_ram(canvas.fb);
 
   prefs.begin("buddy", false);
 
