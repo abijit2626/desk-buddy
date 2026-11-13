@@ -11,6 +11,8 @@ CXX="g++ -std=c++17 -Wall -Wextra"
 mkdir -p out feat
 echo "== compile checks (real sketch, stand-in libraries)"
 $CXX -Imock -I"$AJ" -o mock/sketch_check mock/main_stub.cpp && ./mock/sketch_check > /dev/null && echo "  dewy.ino ok"
+$CXX -DSCREEN_PARALLEL=1 -Imock -I"$AJ" -o mock/sketch_check_par mock/main_stub.cpp && ./mock/sketch_check_par > /dev/null && echo "  dewy.ino ok (parallel screen)"
+$CXX -DSCREEN_PARALLEL=1 -DDEWY_ETH_BOARD=1 -Imock -I"$AJ" -o mock/sketch_check_par_eth mock/main_stub.cpp && ./mock/sketch_check_par_eth > /dev/null && echo "  dewy.ino ok (parallel screen, ETH test board)"
 $CXX -Imock -I"$AJ" -o mock/wokwi_check mock/main_wokwi.cpp && ./mock/wokwi_check > /dev/null && echo "  wokwi/sketch.ino ok"
 echo "== motion"
 $CXX -O2 -Imock/mt -Imock -o mock/motion_test mock/motion_test.cpp && ./mock/motion_test | tail -4

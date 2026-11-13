@@ -13,7 +13,7 @@ firmware/test/demo_frames/
 firmware/test/*_bin
 firmware/test/render_test
 firmware/test/timing
-firmware/test/mock/sketch_check
+firmware/test/mock/sketch_check*
 firmware/test/mock/wokwi_check
 firmware/test/mock/motion_test
 docs/manual/raw/

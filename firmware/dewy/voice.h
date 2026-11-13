@@ -441,6 +441,7 @@ static void voiceTask(void*) {
 
 // ---------------------------------------------------------------- called from the main sketch
 static void voiceBegin() {
+  if (!VOICE_ENABLED) { Serial.println("[voice] off on this board (its mic and speaker pins drive the screen)"); return; }
   micOk = micSetup();
   bool spkOk = spkSetup();
   recBuf = (int16_t*)heap_caps_malloc(REC_MAX_SAMPLES * sizeof(int16_t), MALLOC_CAP_SPIRAM);

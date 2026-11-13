@@ -2,7 +2,53 @@
 #pragma once
 
 // ---------------- pins (your wiring table) ----------------
-#if DEWY_ETH_BOARD
+// SCREEN_PARALLEL 1 drives the screen over its 8-bit parallel port (IM2=0, IM1=0, IM0=1, data on DB8-DB15) with the
+// ESP32-S3's LCD controller: about 3-4x faster than SPI and calmer signals on long wires. 0 = 4-wire SPI.
+#ifndef SCREEN_PARALLEL
+#define SCREEN_PARALLEL 0
+#endif
+
+#if SCREEN_PARALLEL && DEWY_ETH_BOARD
+// Spare ESP32-S3-ETH test board, parallel screen. Not enough free pins for touch or voice here, so both are off.
+// LCD_CS -> GND, LCD_RD -> 3V3, IM2 and IM1 -> GND, IM0 -> 3V3.
+#define PIN_LCD_D0     15   // screen DB8
+#define PIN_LCD_D1     16   // DB9
+#define PIN_LCD_D2     17   // DB10
+#define PIN_LCD_D3     18   // DB11
+#define PIN_LCD_D4     38   // DB12
+#define PIN_LCD_D5     39   // DB13
+#define PIN_LCD_D6     40   // DB14
+#define PIN_LCD_D7     41   // DB15
+#define PIN_LCD_WR     42   // LCD_WR (write strobe)
+#define PIN_LCD_RS     47   // LCD_RS (data / command)
+#define PIN_TFT_RST    48   // LCD_RST
+#define PIN_TFT_BL      1   // BK_LIGHT, for dimming
+#define TOUCH_ENABLED   0
+#define VOICE_ENABLED   0   // the mic and speaker pins are used by the screen on this board
+#define PIN_I2C_SDA    44
+#define PIN_I2C_SCL    43
+#elif SCREEN_PARALLEL
+// Dewy's own board (ESP32-S3 N16R8), parallel screen. LCD_CS -> GND, LCD_RD -> 3V3, IM2 and IM1 -> GND, IM0 -> 3V3.
+#define PIN_LCD_D0      9   // screen DB8
+#define PIN_LCD_D1     10   // DB9
+#define PIN_LCD_D2     11   // DB10
+#define PIN_LCD_D3     12   // DB11
+#define PIN_LCD_D4     13   // DB12
+#define PIN_LCD_D5     14   // DB13
+#define PIN_LCD_D6     39   // DB14
+#define PIN_LCD_D7     40   // DB15
+#define PIN_LCD_WR     41   // LCD_WR (write strobe)
+#define PIN_LCD_RS     42   // LCD_RS (data / command)
+#define PIN_TFT_RST     8   // LCD_RST
+#define PIN_TFT_BL      7   // BK_LIGHT, for dimming
+#define PIN_TOUCH_SCLK  2   // touch has its own small SPI bus
+#define PIN_TOUCH_MOSI  6   // T_DIN
+#define PIN_TOUCH_MISO 47   // T_DOUT
+#define PIN_TOUCH_CS    1   // T_CS (so the battery-percent pin moves if that is ever fitted)
+#define PIN_TOUCH_IRQ  -1   // T_IRQ not needed: touch is polled
+#define PIN_I2C_SDA     4   // GY-87
+#define PIN_I2C_SCL     5
+#elif DEWY_ETH_BOARD
 // Test build for the spare Waveshare ESP32-S3-ETH. Its Ethernet chip is wired to GPIO 9-14 and the SD card to 4-7,
 // so the screen moves to free header pins. Build with: --build-property "compiler.cpp.extra_flags=-DDEWY_ETH_BOARD=1"
 #define PIN_TFT_MOSI    1   // also touch T_DIN
@@ -32,6 +78,9 @@
 
 // ---------------- screen ----------------
 #define SCREEN_ROTATION 1          // 1 or 3. If the face is upside down, change it to the other one.
+#ifndef LCD_FREQ
+#define LCD_FREQ        16000000   // parallel write clock. 16 MHz x 8 bits sends a frame in about 10 ms (SPI: 31 ms)
+#endif
 #ifndef SPI_FREQ
 #define SPI_FREQ        40000000   // 40 MHz is safe on jumper wires. 80 MHz halves the time to send a frame
 #endif                             // (try -DSPI_FREQ=80000000; back to 40 if the picture glitches)
@@ -39,7 +88,17 @@
 #define BRIGHTNESS_ASLEEP 40       // screen dims while it sleeps
 
 // ---------------- touch ----------------
+#ifndef TOUCH_ENABLED
 #define TOUCH_ENABLED   1          // 0 in the Wokwi simulator (it has no XPT2046)
+#endif
+#ifndef VOICE_ENABLED
+#define VOICE_ENABLED   1
+#endif
+#ifndef PIN_TOUCH_SCLK             // SPI screen: touch shares the screen's bus
+#define PIN_TOUCH_SCLK  PIN_TFT_SCLK
+#define PIN_TOUCH_MOSI  PIN_TFT_MOSI
+#define PIN_TOUCH_MISO  PIN_TFT_MISO
+#endif
 #define TAP_MAX_MS      600        // shorter than this = a poke
 #define PET_HOLD_MS     800        // hold this long = petting
 
