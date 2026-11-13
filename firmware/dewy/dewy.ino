@@ -29,6 +29,12 @@
 #include <sys/time.h>
 #include <esp_heap_caps.h>
 #include <esp_memory_utils.h>
+
+// The face builds its shapes in Path objects (about 2.6 KB each) on the stack, several per frame, more with the
+// weather card or a note. The Arduino default of 8 KB for loop() overflowed on the first real board, so give it 32 KB.
+#ifdef SET_LOOP_TASK_STACK_SIZE
+SET_LOOP_TASK_STACK_SIZE(32 * 1024);
+#endif
 #include "config.h"
 #include "display.h"
 #include "face.h"
@@ -607,6 +613,9 @@ static void handleCommand(String raw) {
                   unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)), unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)),
                   unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)), frameCostMs, FRAME_MS,
                   esp_ptr_external_ram(canvas.fb) ? "PSRAM" : "internal RAM");
+#ifdef ESP_PLATFORM
+    Serial.printf("loop stack: %u bytes never used (of 32768)\n", unsigned(uxTaskGetStackHighWaterMark(nullptr)));
+#endif
   }
   else if (cmd == "bond") {
     float a = bondNow();
