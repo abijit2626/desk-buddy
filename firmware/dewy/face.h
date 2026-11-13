@@ -93,11 +93,15 @@ static const int NUM_PALETTES = sizeof(PALETTES) / sizeof(PALETTES[0]);
 struct Seg { float x0, y0, x1, y1; };
 
 struct Canvas {
-  uint16_t* fb = nullptr;      // W*H byte-swapped RGB565
+  uint16_t* fb = nullptr;      // W*H byte-swapped RGB565, indexed fb[y * W + x] (for a strip, only its rows exist)
   float tx = 0, ty = 0;        // whole-face offset (shake, breathing)
+  int bandY0 = 0, bandY1 = H;  // the rows this pass draws: the sketch draws the frame in strips, one render per strip
   int cx0 = 0, cy0 = 0, cx1 = W, cy1 = H;   // clip rectangle
-  void clear() { memset(fb, 0, W * H * 2); }
-  void resetClip() { cx0 = 0; cy0 = 0; cx1 = W; cy1 = H; }
+  void clear() { memset(fb + bandY0 * W, 0, size_t(bandY1 - bandY0) * W * 2); }
+  void resetClip() { cx0 = 0; cy0 = bandY0; cx1 = W; cy1 = bandY1; }
+  void clipTo(int x0, int y0, int x1, int y1) {   // a smaller clip, never outside the strip
+    cx0 = x0 < 0 ? 0 : x0; cy0 = y0 < bandY0 ? bandY0 : y0; cx1 = x1 > W ? W : x1; cy1 = y1 > bandY1 ? bandY1 : y1;
+  }
   inline void put(int x, int y, RGB c, float a) {
     if (a <= 0.004f || x < cx0 || y < cy0 || x >= cx1 || y >= cy1) return;
     uint16_t* p = fb + y * W + x;
@@ -294,16 +298,17 @@ inline void fillConvex(Canvas& cv, const float* xy, int n, RGB c, float alpha) {
 // darken everything drawn so far (a = 0: no change, 1: black)
 inline void dimAll(Canvas& cv, float a) {
   int k = int((1 - clampf(a, 0, 1)) * 256);
-  for (int i = 0; i < W * H; i++) {
+  for (int i = cv.bandY0 * W; i < cv.bandY1 * W; i++) {
     uint16_t v = uint16_t((cv.fb[i] >> 8) | (cv.fb[i] << 8));
     int r = (((v >> 11) & 31) * k) >> 8, g = (((v >> 5) & 63) * k) >> 8, b = ((v & 31) * k) >> 8;
     v = uint16_t((r << 11) | (g << 5) | b);
     cv.fb[i] = uint16_t((v >> 8) | (v << 8));
   }
 }
-// turn the whole picture upside down (used when the buddy itself is upside down, so it still reads right)
+// turn the picture upside down (used when the buddy itself is upside down, so it still reads right).
+// Drawing in strips, the sketch renders the mirrored strip (rows H-y1..H-y0) and this turns it round for rows y0..y1.
 inline void flip180(Canvas& cv) {
-  for (int i = 0, j = W * H - 1; i < j; i++, j--) { uint16_t s = cv.fb[i]; cv.fb[i] = cv.fb[j]; cv.fb[j] = s; }
+  for (int i = cv.bandY0 * W, j = cv.bandY1 * W - 1; i < j; i++, j--) { uint16_t s = cv.fb[i]; cv.fb[i] = cv.fb[j]; cv.fb[j] = s; }
 }
 
 // ---------------------------------------------------------------- words (real fonts)
@@ -803,7 +808,7 @@ public:
       roundRect(cv, 146, 202, 28, 5, r3, eye, c[MSLANT], eye, 0, 0, -10);
       strokeEllipse(cv, 160, 205, 7, 8, 4, eye, c[MRING]);
       if (c[MWAVE] > 0.01f) {
-        cv.cx0 = int(132 + cv.tx); cv.cy0 = int(194 + cv.ty); cv.cx1 = int(188 + cv.tx); cv.cy1 = int(214 + cv.ty);
+        cv.clipTo(int(132 + cv.tx), int(194 + cv.ty), int(188 + cv.tx), int(214 + cv.ty));
         Path p; p.setTransform(132 - fmodf(t / 25, 36), 196, 0);
         p.moveTo(4, 8); p.quadTo(13, 1, 22, 8); p.quadTo(31, 15, 40, 8); p.quadTo(49, 1, 58, 8); p.quadTo(67, 15, 76, 8); p.quadTo(85, 1, 94, 8);
         strokeSegs(cv, p.segs, p.n, 4, eye, c[MWAVE]);

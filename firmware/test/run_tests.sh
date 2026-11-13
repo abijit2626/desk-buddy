@@ -22,6 +22,8 @@ echo "== voice: speech detector, reading replies, the voice code with a pretend 
 $CXX -o vad_bin vad_test.cpp && ./vad_bin | grep -E "FAIL|passed"
 $CXX -Imock -o reply_bin reply_test.cpp && ./reply_bin | grep -E "FAIL|passed"
 $CXX -Icloudmock -Imock -I"$AJ" -o voice_bin voice_test.cpp && ./voice_bin | grep -E "FAIL|passed"
+echo "== strips: drawing in strips matches the whole frame"
+g++ -std=c++17 -O2 -o strips_bin strips_test.cpp && ./strips_bin | grep -E "FAIL|passed"
 echo "== bond: levels, fading after days apart, welcomes"
 $CXX -o bond_bin bond_test.cpp && ./bond_bin | grep -E "FAIL|passed"
 echo "== face renders (feat/*.ppm) and speed"

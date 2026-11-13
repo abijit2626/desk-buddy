@@ -29,7 +29,6 @@
 #include <sys/time.h>
 #include <esp_heap_caps.h>
 #include <esp_memory_utils.h>
-#include <esp_cache.h>
 #include "config.h"
 #include "display.h"
 #include "face.h"
@@ -116,8 +115,11 @@ static face::Font fontFrom(const lgfx::GFXfont& f) {
 }
 
 // ---------------- drawing one frame ----------------
-static float frameCostMs = 0;
-static bool fbInPsram = false;   // drawing + sending one frame, averaged (the "mem" command shows it)
+static float frameCostMs = 0;   // drawing + sending one frame, averaged (the "mem" command shows it)
+// The frame is drawn in strips of BAND_ROWS rows into two small buffers in fast internal RAM. While one strip goes
+// to the screen by DMA, the next is drawn. A whole 150 KB frame in internal RAM left Wi-Fi too little memory, and
+// sending one from PSRAM corrupted the picture (stripes in the eyes on the first board).
+static uint16_t* bandBuf[2] = { nullptr, nullptr };
 static void drawFrame() {
   uint32_t now = millis();
   float dt = float(now - lastFrame);
@@ -137,11 +139,19 @@ static void drawFrame() {
     refreshDateMask();
   }
   uint32_t t0 = micros();
-  buddy.render(canvas, hhmm);
-  // A frame in PSRAM is written through the CPU cache, but the screen transfer reads PSRAM itself: write the cache
-  // back first, or parts of the old frame show through as stripes (seen on the first board when the face woke up).
-  if (fbInPsram) esp_cache_msync(canvas.fb, size_t(face::W) * face::H * 2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
-  tft.pushImage(0, 0, face::W, face::H, (lgfx::swap565_t*)canvas.fb);
+  bool flipped = buddy.upsideDown();
+  tft.startWrite();
+  for (int k = 0, y0 = 0; y0 < face::H; k++, y0 += BAND_ROWS) {
+    int rows = face::H - y0 < BAND_ROWS ? face::H - y0 : BAND_ROWS;
+    int sy0 = flipped ? face::H - y0 - rows : y0;          // upside down: draw the mirrored strip, render() turns it round
+    uint16_t* buf = bandBuf[k & 1];                         // the other buffer may still be going out by DMA
+    canvas.fb = buf - sy0 * face::W;                        // so fb[y * W + x] lands in this strip for its rows
+    canvas.bandY0 = sy0; canvas.bandY1 = sy0 + rows;
+    buddy.render(canvas, hhmm);
+    tft.waitDMA();                                          // the previous strip has finished sending
+    tft.pushImageDMA(0, y0, face::W, rows, (lgfx::swap565_t*)buf);
+  }
+  tft.endWrite();                                           // waits for the last strip
   frameCostMs += ((micros() - t0) / 1000.0f - frameCostMs) * 0.05f;
 }
 
@@ -614,10 +624,9 @@ static void handleCommand(String raw) {
     else { simBattery = int(v.toInt()); buddy.setBattery(simBattery); if (simBattery <= 5) buddy.sleep(); Serial.printf("battery: pretending %d%%\n", simBattery); }
   }
   else if (cmd == "mem") {
-    Serial.printf("internal RAM free %u (largest block %u), PSRAM free %u, frame takes %.1f ms of %d ms, frame buffer in %s\n",
+    Serial.printf("internal RAM free %u (largest block %u), PSRAM free %u, frame takes %.1f ms of %d ms (%d-row strips, SPI %d MHz)\n",
                   unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)), unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)),
-                  unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)), frameCostMs, FRAME_MS,
-                  esp_ptr_external_ram(canvas.fb) ? "PSRAM" : "internal RAM");
+                  unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)), frameCostMs, FRAME_MS, BAND_ROWS, int(SPI_FREQ / 1000000));
 #ifdef ESP_PLATFORM
     Serial.printf("loop stack: %u bytes never used (of 32768)\n", unsigned(uxTaskGetStackHighWaterMark(nullptr)));
 #endif
@@ -815,13 +824,12 @@ void setup() {
   tft.setBrightness(0);
   tft.fillScreen(TFT_BLACK);
 
-  // one full 320 x 240 frame (150 KB). In PSRAM by default: Wi-Fi, the setup hotspot and HTTPS need the internal RAM.
-  const size_t fbBytes = face::W * face::H * 2;
-  canvas.fb = FRAME_IN_PSRAM ? (uint16_t*)heap_caps_aligned_alloc(64, fbBytes, MALLOC_CAP_SPIRAM) : nullptr;
-  if (!canvas.fb) canvas.fb = (uint16_t*)heap_caps_malloc(fbBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-  if (!canvas.fb) canvas.fb = (uint16_t*)heap_caps_malloc(fbBytes, MALLOC_CAP_SPIRAM);
-  if (!canvas.fb) { Serial.println("Not enough memory for the frame buffer"); while (true) delay(1000); }
-  fbInPsram = esp_ptr_external_ram(canvas.fb);
+  // two strips of BAND_ROWS x 320 pixels in internal, DMA-capable RAM (see drawFrame)
+  for (int i = 0; i < 2; i++) {
+    bandBuf[i] = (uint16_t*)heap_caps_malloc(size_t(face::W) * BAND_ROWS * 2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (!bandBuf[i]) { Serial.println("Not enough memory for the screen strips: lower BAND_ROWS in config.h"); while (true) delay(1000); }
+  }
+  canvas.fb = bandBuf[0];
 
   prefs.begin("buddy", false);
 

@@ -114,8 +114,8 @@
 #endif
 
 #define FRAME_MS        33         // about 30 frames a second
-#define FRAME_IN_PSRAM  1          // keep the 150 KB frame in PSRAM, leaving internal RAM for Wi-Fi and HTTPS.
-                                   // 0 = internal RAM (faster drawing, but Wi-Fi setup and talking can run short)
+#define BAND_ROWS       48         // the frame is drawn in strips this tall (2 x 30 KB of internal RAM). Fewer rows
+                                   // use less RAM; more rows draw a little faster
 
 // ---------------- cloud (the phone app's server; address and key are in secrets.h) ----------------
 #define DEWY_VERSION    "1.0.0"    // bump this for every firmware update you publish

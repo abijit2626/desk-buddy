@@ -21,6 +21,7 @@ public:
       cfg.freq_read = 16000000;
       cfg.spi_3wire = false;
       cfg.use_lock = true;
+      cfg.dma_channel = SPI_DMA_CH_AUTO;   // strips are sent by DMA while the next one is drawn
       cfg.pin_sclk = PIN_TFT_SCLK;
       cfg.pin_mosi = PIN_TFT_MOSI;
       cfg.pin_miso = PIN_TFT_MISO;
