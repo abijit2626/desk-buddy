@@ -10,6 +10,7 @@ inline uint32_t millis() { static uint32_t t = 0; return t += 7; }
 inline uint32_t micros() { static uint32_t t = 0; return t += 7000; }
 inline int g_delayCalls = 0;   // tests count how often the code really sleeps
 inline void delay(uint32_t) { g_delayCalls++; }
+inline void disableCore0WDT() {}
 inline uint32_t esp_random() { return 1; }
 struct String {
   std::string s; String() {} String(const char* c) : s(c ? c : "") {} String(const std::string& x) : s(x) {}

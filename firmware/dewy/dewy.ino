@@ -912,6 +912,10 @@ void setup() {
 
   startWifi();
   voiceBegin();
+  // Core 0 runs the wake word all the time, and the network task's HTTPS handshakes are seconds of maths on the same
+  // core (the S3 has no hardware for the elliptic-curve part). Together they can keep core 0's idle task from running
+  // for 5 s, and the watchdog then restarts Dewy. Both tasks still yield to each other; only that idle check goes.
+  disableCore0WDT();
   lastInteract = lastFrame = millis();
   Serial.println("Type \"help\" for test commands.");
 }
