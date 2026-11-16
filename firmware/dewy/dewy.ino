@@ -117,6 +117,9 @@ static face::Font fontFrom(const lgfx::GFXfont& f) {
 // ---------------- drawing one frame ----------------
 static float drawCostMs = 0;    // the drawing part of it
 static uint32_t profFrames = 0;   // frames since the last "prof reset"
+// "bench <command>": runs the command, then times every frame for 6 s and prints the average per half second
+static uint32_t benchStart = 0;
+static float benchSum[12]; static int benchN[12];
 static float frameCostMs = 0;   // drawing + sending one frame, averaged (the "mem" command shows it)
 // The frame is drawn in strips of BAND_ROWS rows into two small buffers in fast internal RAM. While one strip goes
 // to the screen by DMA, the next is drawn. A whole 150 KB frame in internal RAM left Wi-Fi too little memory, and
@@ -164,6 +167,15 @@ static void drawFrame() {
   profFrames++;
   frameCostMs += ((micros() - t0) / 1000.0f - frameCostMs) * 0.05f;
   drawCostMs += (drawUs / 1000.0f - drawCostMs) * 0.05f;
+  if (benchStart) {
+    uint32_t e = millis() - benchStart; int w = int(e / 500);
+    if (w < 12) { benchSum[w] += drawUs / 1000.0f; benchN[w]++; }
+    else {
+      Serial.println("bench: drawing ms per frame, each half second after the command:");
+      for (int i = 0; i < 12; i++) Serial.printf("  %4.1f-%4.1fs  %5.1f ms  (%d frames)\n", i * 0.5f, i * 0.5f + 0.5f, benchN[i] ? benchSum[i] / benchN[i] : 0.f, benchN[i]);
+      benchStart = 0;
+    }
+  }
 }
 
 // ---------------- personality: the bond grows with pets, pokes and pick-ups (saved in flash, see bond.h) ----------------
@@ -565,7 +577,7 @@ static void printHelp() {
   Serial.println("Features: 8ball, weather sun|cloud|rain|off|show, timer [minutes] | timer stop,");
   Serial.println("          remind water|stretch, note <text>, bday [own], battery <0-100>|auto,");
   Serial.println("          affection <0-1>, tilt <x> <y>|off, facedown on|off, upside on|off");
-  Serial.println("System:   mem (free RAM and how long a frame takes)");
+  Serial.println("System:   mem (free RAM and how long a frame takes), bench <command> (frame times after it)");
   Serial.println("Bond:     bond (level and progress), rest on|off (as if switched off in the app), miss on|off");
   Serial.println("Setup:    cal up, cal face, axes, wifi, wifi reset, setup, pair");
 }
@@ -575,6 +587,13 @@ static void handleCommand(String raw) {
   String cmd = raw; cmd.toLowerCase();
   if (!cmd.length()) return;
   interacted();
+  if (cmd.startsWith("bench ")) {
+    for (int i = 0; i < 12; i++) { benchSum[i] = 0; benchN[i] = 0; }
+    handleCommand(raw.substring(6, raw.length()));
+    benchStart = millis() | 1;
+    Serial.println("bench: timing for 6 s...");
+    return;
+  }
   if (cmd == "shake") buddy.shake();
   else if (cmd == "pick" || cmd == "pickup") buddy.pickUp();
   else if (cmd == "name") buddy.sayName();
