@@ -178,8 +178,12 @@
 #ifndef SCREEN_DMA
 #define SCREEN_DMA      1          // send each strip by DMA while the next is drawn. 0 = plain blocking sends
 #endif
-#define BAND_ROWS       48         // the frame is drawn in strips this tall (2 x 30 KB of internal RAM). Fewer rows
-                                   // use less RAM; more rows draw a little faster
+#ifndef BAND_ROWS
+#define BAND_ROWS       24         // the frame is drawn in strips this tall (2 x 15 KB of internal RAM). Fewer rows
+                                   // use less RAM; more rows draw a little faster. 48 left HTTPS (TLS) too little
+                                   // internal RAM once Wi-Fi, the mic and the speaker were running ("SSL - Memory
+                                   // allocation failed"); 24 costs about 1 ms a frame
+#endif
 
 // ---------------- cloud (the phone app's server; address and key are in secrets.h) ----------------
 #define DEWY_VERSION    "1.0.0"    // bump this for every firmware update you publish
