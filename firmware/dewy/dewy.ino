@@ -650,6 +650,13 @@ static void handleCommand(String raw) {
                   unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)), frameCostMs, FRAME_MS, drawCostMs, frameCostMs - drawCostMs, BAND_ROWS, SCREEN_PARALLEL ? "parallel screen" : "SPI screen");
 #ifdef ESP_PLATFORM
     Serial.printf("loop stack: %u bytes never used (of 32768)\n", unsigned(uxTaskGetStackHighWaterMark(nullptr)));
+#if defined(__OPTIMIZE_SIZE__)
+    Serial.println("built for size (-Os)");
+#elif defined(__OPTIMIZE__)
+    Serial.println("built for speed (-O2)");
+#else
+    Serial.println("built without optimisation");
+#endif
 #endif
   }
   else if (cmd == "bond") {

@@ -290,10 +290,51 @@ inline void roundRect(Canvas& cv, float x, float y, float w, float h, const floa
     else if (fabsf(py * cs) > B) return false;
     return lo <= hi;
   };
+  // Corners: each corner is a circle around (hw - r, hh - r) in the box's frame. Working out where a row
+  // crosses those circles (one square root per corner per row) keeps the per-pixel maths to the thin
+  // band along the outline, instead of the whole square corner area.
+  float rk[4], rmin = 1e9f, ccx[4], ccy[4];
+  const int sxk[4] = { -1, 1, 1, -1 }, syk[4] = { -1, -1, 1, 1 };
+  for (int k = 0; k < 4; k++) {
+    rk[k] = fmx(0, fmn(r[k], fmn(hw, hh))); rmin = fmn(rmin, rk[k]);
+    float qx = sxk[k] * (hw - rk[k]), qy = syk[k] * (hh - rk[k]);
+    ccx[k] = qx * cs - qy * sn; ccy[k] = qx * sn + qy * cs;   // back into screen offsets
+  }
+  // a circle can only stand in for a corner where the neighbouring corners have the same radius,
+  // otherwise it is cut at the box's middle lines (only matters for the solid middle)
+  bool clipX[4], clipY[4];
+  for (int k = 0; k < 4; k++) {
+    int hn = k ^ 1, vn = 3 - k, op = (k + 2) & 3;
+    clipX[k] = rk[hn] != rk[k] || rk[op] != rk[k];
+    clipY[k] = rk[vn] != rk[k] || rk[op] != rk[k];
+  }
+  auto disc = [&](int k, float R, float py, float& lo, float& hi) -> bool {
+    if (R <= 0) return false;
+    float d = py - ccy[k], q = R * R - d * d;
+    if (q <= 0) return false;
+    float hlf = sqrtf(q); lo = ccx[k] - hlf; hi = ccx[k] + hlf;
+    return true;
+  };
+  // keep px where qx has the corner's sign (qx = px*cs + py*sn) or qy does (qy = py*cs - px*sn)
+  auto clipHalf = [&](bool alongX, int sgn, float py, float& lo, float& hi) -> bool {
+    float a = alongX ? cs : -sn, b = alongX ? py * sn : py * cs;   // want sgn * (a*px + b) >= 0
+    a *= sgn; b *= sgn;
+    if (fabsf(a) < 1e-6f) return b >= 0;
+    float x = -b / a;
+    if (a > 0) lo = fmx(lo, x); else hi = fmn(hi, x);
+    return lo <= hi;
+  };
   float off = cx - 0.5f;   // xx = px + off
   for (int yy = y0; yy < y1; yy++) {
-    float py = yy + 0.5f - cy, lo, hi;
-    if (!span(hw + mOut, hh + mOut, py, lo, hi)) continue;
+    float py = yy + 0.5f - cy, lo = 1e9f, hi = -1e9f;
+    {
+      // the shape grown by the edge band, as straight arms plus corner circles (a little too big is fine)
+      float l, h;
+      if (span(hw + mOut, hh - rmin, py, l, h)) { lo = fmn(lo, l); hi = fmx(hi, h); }
+      if (span(hw - rmin, hh + mOut, py, l, h)) { lo = fmn(lo, l); hi = fmx(hi, h); }
+      for (int k = 0; k < 4; k++) if (disc(k, rk[k] + mOut, py, l, h)) { lo = fmn(lo, l); hi = fmx(hi, h); }
+      if (lo > hi) continue;
+    }
     int xs = int(floorf(lo + off)) - 1, xe = int(ceilf(hi + off)) + 1;
     if (xs < x0) xs = x0;
     if (xe > x1 - 1) xe = x1 - 1;
@@ -304,6 +345,15 @@ inline void roundRect(Canvas& cv, float x, float y, float w, float h, const floa
     bool a2 = span(fmn(hw - rmax, hw - mIn), hh - mIn, py, l2, h2);
     if (a1 && a2 && l2 <= h1 && l1 <= h2) { l1 = fmn(l1, l2); h1 = fmx(h1, h2); }
     else if (a2 && (!a1 || h2 - l2 > h1 - l1)) { l1 = l2; h1 = h2; a1 = true; }
+    // the corner circles shrunk by the edge band are solid too; the shape is convex, so the row's solid
+    // part runs from the leftmost to the rightmost of these pieces
+    for (int k = 0; k < 4; k++) {
+      float l, h;
+      if (!disc(k, rk[k] - mIn, py, l, h)) continue;
+      if (clipX[k] && !clipHalf(true, sxk[k], py, l, h)) continue;
+      if (clipY[k] && !clipHalf(false, syk[k], py, l, h)) continue;
+      if (a1) { l1 = fmn(l1, l); h1 = fmx(h1, h); } else { l1 = l; h1 = h; a1 = true; }
+    }
     if (a1) { is = int(ceilf(l1 + off)); ie = int(floorf(h1 + off)); }
     for (int xx = xs; xx <= xe; xx++) {
       if (xx >= is && xx <= ie) {
