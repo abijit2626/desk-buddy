@@ -3,6 +3,7 @@
 #include "Arduino.h"
 #include "Wire.h"
 SerialT Serial; TwoWire Wire; int g_wifiStatus = 3;
+#include "wake_stub.h"
 #include "../dewy/dewy.ino"
 namespace lgfx { inline namespace v1 { namespace fonts { const GFXfont FreeSansBold12pt7b{}, FreeSansBold18pt7b{}, FreeSansBold24pt7b{}; } } }
 #include <vector>

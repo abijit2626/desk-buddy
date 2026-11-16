@@ -10,6 +10,15 @@ The animated face for Dewy, the ESP32-S3 desk buddy, plus everything it does:
 - **Magic 8-ball:** tap, then shake within 4 seconds
 - **Wi-Fi:** the real time, **weather in its eyes** (sunglasses, cloud, rain) and **updates over Wi-Fi**
 - **Study timer**, **water and stretch reminders**, **notes**, **birthday party**, **a personality that grows**, **low-battery face**
+- **A bond that grows** (see `dewy/bond.h`): stranger, friend, close friend, best friend, soulmate. Pets, pokes and pick-ups
+  bring you closer; each new level gets a celebration, and closer buddies welcome you back with more hearts and put up
+  with more poking. After a long time alone it misses you, and after days apart the bond fades slowly (never below half)
+- **Alarms that ring** (set in the app): beeps through the speaker, getting louder over a minute, until you answer.
+  Say "snooze" or "stop" (no "Hey Dewy" needed while it rings), or tap / shake / lift to snooze and hold a finger on
+  its face to stop. Snooze length is set in the app (9 minutes by default). Unanswered, it stops after 10 minutes
+- **"Hey Dewy, what time is it?"** answers and then shows the clock for 10 seconds
+- **On/off switch in the app:** "off" lets Dewy rest, dark and quiet (no reminders or talking; alarms still ring).
+  A touch wakes it for 20 seconds
 - **Phone app** (see [../cloud](../cloud)): Wi-Fi setup through Dewy's own hotspot, pairing with a code on screen,
   settings, alarms and reminders from her iPhone, notes from you, and **updates from anywhere**
 
@@ -37,6 +46,7 @@ test/                   PC tests: renders, motion and orientation checks, compil
 5. Click the serial monitor and type commands (press Enter after each). Type `help` for the full list. Some to try:
    - `8ball`, `weather sun` (or `cloud`, `rain`), `timer 1`, `remind water`, `remind stretch`
    - `note Good luck today!`, `bday`, `bday own`, `battery 15`, `battery 4`, `affection 0.8`
+   - `alarm` (then `snooze` or `alarm stop`), `bond`, `affection 0.66` (then pet it to see a level-up), `miss on`, `rest on`, `rest off`
    - `tilt 1 0`, `tilt off`, `facedown on`, `facedown off`, `upside on`, `upside off`
    - `sleep` then `wake` a few times to see the eye colours change
 6. Click the MPU6050 and drag its sliders quickly to test shake and pick-up.

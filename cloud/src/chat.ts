@@ -18,7 +18,8 @@ export interface ChatEnv {
   ANTHROPIC_API_KEY?: string;     // secret, only for CHAT_PROVIDER="anthropic"
   ANTHROPIC_MODEL?: string;       // default: claude-haiku-5-5
   CHATS_PER_DAY?: string;         // questions per Dewy per day
-  CHAT_TOKENS_PER_DAY?: string;   // Claude tokens (in + out) per Dewy per day
+  CHAT_TOKENS_PER_DAY?: string;
+  ALARM_CMDS_PER_DAY?: string;      // snooze/stop words heard while the alarm rings, per Dewy per day (default 60)   // Claude tokens (in + out) per Dewy per day
   TTS_CHARS_PER_DAY?: string;     // spoken characters per Dewy per day
   TTS_SPEAKER?: string;           // Deepgram Aura voice, default "luna"
   CHAT_FAKE_AI?: string;          // .dev.vars only, for tests: "1" = scripted stand-ins for every service;
@@ -429,6 +430,14 @@ export async function handleChat(req: Request, env: ChatEnv, dev: { id: string; 
   // Nobody spoke (a bump on the table, a false wake-up): say so in words. No question is counted and no voice is paid for.
   if (nobody) return textAnswer("", DIDNT_CATCH);
 
+  // The alarm is ringing: only listen for snooze or stop. Nothing is spoken back and no question is counted.
+  if ((req.headers.get("x-dewy-context") || "").toLowerCase() === "alarm") {
+    if ((await bumpUsage(env, dev.id, "alarm_cmd")) > Number(env.ALARM_CMDS_PER_DAY || 60))
+      return new Response(JSON.stringify({ heard: "", action: null }), { headers: { ...COMMON_HEADERS, "content-type": "application/json; charset=utf-8" } });
+    const said = heard ?? cleanText(await prov.transcribe(wav!), MAX_HEARD, true) ?? "";
+    return new Response(JSON.stringify({ heard: said, action: alarmAction(said) }), { headers: { ...COMMON_HEADERS, "content-type": "application/json; charset=utf-8" } });
+  }
+
   // 2. limits, checked before anything that costs money
   const chatLimit = Number(env.CHATS_PER_DAY || 40);
   if ((await bumpUsage(env, dev.id, "chat")) > chatLimit)
@@ -500,11 +509,26 @@ export async function handleChat(req: Request, env: ChatEnv, dev: { id: string; 
       "content-type": "audio/wav",
       "x-dewy-heard": headerText(heard, 200),
       "x-dewy-reply": headerText(reply, MAX_REPLY_CHARS),
+      ...(wantsClock(heard) ? { "x-dewy-show": "clock" } : {}),
     },
   });
 }
 
 // The words only (no voice): used when nobody spoke, the day's speaking budget is used up, or the voice service failed.
+// While the alarm rings Dewy sends whatever it hears, with no "Hey Dewy" first. Only these words do anything.
+export function alarmAction(heard: string): "snooze" | "stop" | null {
+  const q = " " + heard.toLowerCase().replace(/[^a-z' ]+/g, " ") + " ";
+  if (/ (snooze|snoozing|five more|5 more|later|let me sleep|not yet) /.test(q)) return "snooze";
+  if (/ (stop|off|turn it off|i'?m up|i'?m awake|awake|dismiss|enough|shut up|quiet|okay okay|ok ok) /.test(q)) return "stop";
+  return null;
+}
+
+// "What time is it?": Dewy shows its clock after answering. A timer is not the time.
+export function wantsClock(heard: string): boolean {
+  const q = heard.toLowerCase();
+  return /\b(time|clock)\b/.test(q) && !/\btimer\b/.test(q);
+}
+
 function textAnswer(heard: string, reply: string): Response {
   return new Response(JSON.stringify({ heard, reply, audio: false }), { headers: { ...COMMON_HEADERS, "content-type": "application/json; charset=utf-8" } });
 }

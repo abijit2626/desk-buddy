@@ -61,6 +61,18 @@
   <!-- home -->
   <section id="tab-home" class="stack" aria-label="Home">
     <div class="card">
+      <div class="row between">
+        <div class="grow power-text"><h2 id="powerTitle">Dewy is on</h2><p class="small muted" id="powerHint">Awake, chatty and reminding you.</p></div>
+        <label class="switch"><input type="checkbox" role="switch" id="powerSwitch" aria-label="Dewy on" checked><span></span></label>
+      </div>
+    </div>
+
+    <div class="card" id="bondCard" hidden>
+      <div class="row between"><h2>Your bond</h2><span class="badge" id="bondLevel">Friend</span></div>
+      <div class="bond-bar" role="progressbar" aria-label="Bond with Dewy" aria-valuemin="0" aria-valuemax="100" id="bondBar"><i id="bondFill"></i></div>
+      <p class="small muted" id="bondHint">Pet, poke and pick Dewy up to grow closer.</p>
+    </div>
+    <div class="card">
       <div class="row between"><h2>Study timer</h2><span class="badge" id="timerBadge" hidden>Running</span></div>
       <div class="row between" id="timerIdle">
         <div class="stepper">
@@ -95,7 +107,9 @@
     <div class="card">
       <div class="row between"><h2>Alarms</h2><button class="ghost" type="button" id="addAlarm">Add</button></div>
       <div class="list" id="alarmList"></div>
-      <p class="small muted">Tap Dewy, shake it or pick it up to snooze. Alarms don't ring while Dewy lies on its face.</p>
+      <label class="field">Snooze for <select id="snoozeLen"></select></label>
+      <p class="small muted">To snooze, say "snooze", tap Dewy, or shake or lift it. To stop, say "stop" or hold a finger on its face.
+        No "Hey Dewy" needed while it rings. Alarms don't ring while Dewy lies on its face.</p>
     </div>
     <form class="card" id="alarmEditor" hidden>
       <h2 id="alarmEditorTitle">New alarm</h2>

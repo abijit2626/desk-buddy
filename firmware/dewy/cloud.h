@@ -10,6 +10,8 @@
 #include <Update.h>
 #include <ArduinoJson.h>
 #include "mbedtls/sha256.h"
+#include <esp_heap_caps.h>
+#include <time.h>
 #include "cacerts.h"
 
 // ---------------------------------------------------------------- settings (from the phone app)
@@ -22,6 +24,8 @@ struct DewySettings {
   uint16_t study;
   uint8_t bdM, bdD;
   uint16_t gY; uint8_t gM, gD;
+  bool powerOn;                   // false = switched off in the app: Dewy rests until switched on
+  uint8_t snoozeMin;              // minutes a snoozed alarm waits before ringing again
 };
 static DewySettings S;            // the main loop's copy
 
@@ -34,6 +38,8 @@ static void settingsDefaults() {
   S.study = STUDY_MINUTES;
   S.bdM = BIRTHDAY_MONTH; S.bdD = BIRTHDAY_DAY;
   S.gY = GIFT_YEAR; S.gM = GIFT_MONTH; S.gD = GIFT_DAY;
+  S.powerOn = true;
+  S.snoozeMin = 9;
 }
 
 // The server already checks everything; this is a second, defensive check.
@@ -62,6 +68,8 @@ static bool settingsFromJson(const char* json) {
   n.study = constrain(int(d["studyMinutes"] | 25), 1, 180);
   n.bdM = d["birthday"]["month"] | 0; n.bdD = d["birthday"]["day"] | 0;
   n.gY = d["giftDate"]["year"] | 0; n.gM = d["giftDate"]["month"] | 0; n.gD = d["giftDate"]["day"] | 0;
+  n.powerOn = d["powerOn"] | true;         // older settings without the switch mean "on"
+  n.snoozeMin = d["snoozeMinutes"] | 9;
   S = n;
   return true;
 }
@@ -86,6 +94,8 @@ static volatile int ackId = 0;               // the newest event the face has ha
 static volatile bool wantPair = false;       // ask for a new pairing code now
 static volatile bool updateAllowed = false;  // a firmware update may start (nothing important on screen)
 static volatile bool dewyAsleep = false;     // check in less often while asleep
+static volatile bool dewyResting = false;    // switched off in the app: no voice, no reminders
+static volatile int bondReport = -1;         // bond 0..1000 for the phone app, -1 = not known yet
 static volatile float cityLat = 0, cityLon = 0;
 static volatile bool cityOn = false;
 // network task -> main loop
@@ -94,14 +104,30 @@ static volatile bool cloudReady = false;     // registered with the server
 
 static bool cloudOn() { return strlen(DEWY_SERVER) > 8; }
 
-// ---------------------------------------------------------------- HTTPS helper (network task only)
+// ---------------------------------------------------------------- one HTTPS conversation at a time
+// Each TLS connection needs about 45 KB of internal RAM. The network task (sync, weather, updates) and the voice task
+// both talk HTTPS, so they take turns: whoever holds the lock is the only one with a connection open.
+static SemaphoreHandle_t tlsLock = nullptr;
+struct TlsGuard {
+  bool ok;
+  explicit TlsGuard(uint32_t waitMs = 0xFFFFFFFFu) {
+    ok = !tlsLock || xSemaphoreTake(tlsLock, waitMs == 0xFFFFFFFFu ? portMAX_DELAY : pdMS_TO_TICKS(waitMs)) == pdTRUE;
+  }
+  ~TlsGuard() { if (ok && tlsLock) xSemaphoreGive(tlsLock); }
+  TlsGuard(const TlsGuard&) = delete;
+  TlsGuard& operator=(const TlsGuard&) = delete;
+};
+
+// ---------------------------------------------------------------- HTTPS helper
 static char deviceToken[64] = "";
 
 static int httpsJson(const char* method, const String& url, const char* body, JsonDocument* out, bool sendToken = true, const char* regKey = nullptr) {
+  TlsGuard tls;
   WiFiClientSecure client;
   client.setCACert(CA_BUNDLE);
   client.setTimeout(15);
   HTTPClient http;
+  http.setUserAgent("Dewy-ESP32/1.0");
   http.setTimeout(15000);
   if (!http.begin(client, url)) return -1;
   if (sendToken && deviceToken[0]) http.addHeader("Authorization", String("Bearer ") + deviceToken);
@@ -110,6 +136,12 @@ static int httpsJson(const char* method, const String& url, const char* body, Js
   int code;
   if (strcmp(method, "GET") == 0) code = http.GET();
   else { http.addHeader("Content-Type", "application/json"); code = http.POST(body ? body : "{}"); }
+  if (code < 0) {   // no answer at all: say why (TLS, DNS, memory), so a failed connection isn't a mystery
+    char err[96] = ""; client.lastError(err, sizeof err);
+    Serial.printf("[cloud] %s %s failed: %s | TLS: %s | free internal RAM %u (largest block %u), clock %lu\n", method, url.c_str(),
+                  http.errorToString(code).c_str(), err[0] ? err : "-", unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
+                  unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)), (unsigned long)time(nullptr));
+  }
   if (code > 0 && out) {
     String payload = http.getString();
     if (deserializeJson(*out, payload.c_str())) out->clear();
@@ -122,6 +154,7 @@ static int httpsJson(const char* method, const String& url, const char* body, Js
 static Preferences netPrefs;
 static int knownRev = 0, lastQueued = 0;
 
+static int lastRegisterCode = 0;
 static bool cloudRegister() {
   JsonDocument d;
   String body = String("{\"fw\":\"") + DEWY_VERSION + "\"}";
@@ -129,6 +162,7 @@ static bool cloudRegister() {
   const char* tok = d["token"] | "";
   if (code != 201 || strlen(tok) < 20 || strlen(tok) >= sizeof deviceToken) {
     Serial.printf("[cloud] couldn't register (HTTP %d)%s\n", code, code == 403 ? ": DEWY_REGISTER_KEY doesn't match the server's REGISTER_KEY" : "");
+    lastRegisterCode = code;
     return false;
   }
   strcpy(deviceToken, tok);
@@ -138,8 +172,10 @@ static bool cloudRegister() {
 }
 
 static void cloudSync() {
-  char path[96];
-  snprintf(path, sizeof path, "/api/device/sync?rev=%d&ack=%d", knownRev, int(ackId));
+  char path[112];
+  int b = bondReport;
+  if (b >= 0) snprintf(path, sizeof path, "/api/device/sync?rev=%d&ack=%d&bond=%d", knownRev, int(ackId), b);
+  else snprintf(path, sizeof path, "/api/device/sync?rev=%d&ack=%d", knownRev, int(ackId));
   JsonDocument d;
   int code = httpsJson("GET", String(DEWY_SERVER) + path, nullptr, &d);
   if (code == 401) {                         // the server doesn't know this Dewy any more: start over
@@ -203,9 +239,11 @@ static int parseWeather(const char* s) {
   return face::WEATHER_CLOUD;
 }
 static bool fetchWeather() {
+  TlsGuard tls;
   WiFiClientSecure client;
   client.setCACert(CA_BUNDLE);
   HTTPClient http;
+  http.setUserAgent("Dewy-ESP32/1.0");
   char url[180];
   snprintf(url, sizeof url, "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f&current=weather_code,is_day", float(cityLat), float(cityLon));
   bool ok = false;
@@ -230,6 +268,7 @@ static void installFirmware() {
   WiFiClientSecure client;
   client.setCACert(CA_BUNDLE);
   HTTPClient http;
+  http.setUserAgent("Dewy-ESP32/1.0");
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);   // GitHub sends release files from another address
   http.setTimeout(20000);
   bool ok = false;
@@ -279,7 +318,7 @@ static void netTask(void*) {
     uint32_t now = millis();
     if (WiFi.status() == WL_CONNECTED) {
       if (cloudOn()) {
-        if (!deviceToken[0] && int32_t(now - nextRegister) >= 0) { if (!cloudRegister()) nextRegister = now + 10UL * 60UL * 1000UL; }
+        if (!deviceToken[0] && int32_t(now - nextRegister) >= 0) { if (!cloudRegister()) nextRegister = now + (lastRegisterCode < 0 ? 30UL * 1000UL : 10UL * 60UL * 1000UL); }   // no connection: try again soon
         if (deviceToken[0] && int32_t(now - nextSync) >= 0) {
           cloudSync();
           nextSync = millis() + (dewyAsleep ? SYNC_ASLEEP_MS : SYNC_AWAKE_MS);
@@ -291,7 +330,10 @@ static void netTask(void*) {
         }
         bool offer;
         { NetLock lock; offer = inbox.fwOffer; }
-        if (offer && updateAllowed) installFirmware();
+        if (offer && updateAllowed) {
+          TlsGuard tls;                                   // wait for a voice turn that is talking to the server
+          if (updateAllowed) installFirmware();           // and look again: it may have started a conversation meanwhile
+        }
       }
       if (cityOn && int32_t(now - nextWeather) >= 0) nextWeather = millis() + (fetchWeather() ? 30UL : 1UL) * 60UL * 1000UL;
     }
@@ -301,6 +343,7 @@ static void netTask(void*) {
 
 static void startNetTask() {
   netLock = xSemaphoreCreateMutex();
+  tlsLock = xSemaphoreCreateMutex();
   memset(&inbox, 0, sizeof inbox);
   inbox.weather = -1;
   xTaskCreatePinnedToCore(netTask, "net", 12288, nullptr, 1, nullptr, 0);

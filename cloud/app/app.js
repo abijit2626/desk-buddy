@@ -109,7 +109,7 @@ function showTab(name) {
 
 // ---------------------------------------------------------------- rendering
 function renderAll() {
-  renderStatus(); renderTimer(); renderAlarms(); renderReminders(); renderMore();
+  renderStatus(); renderPower(); renderBond(); renderTimer(); renderAlarms(); renderReminders(); renderMore();
   changed();
 }
 
@@ -121,6 +121,56 @@ function renderStatus() {
   const st = $("status");
   st.classList.toggle("on", me.dewy.online);
   $("statusText").textContent = me.dewy.online ? name + " is online" : me.dewy.lastSeen ? "Offline, seen " + ago(me.dewy.lastSeen) : "Not connected yet";
+}
+
+// on/off switch: "off" lets Dewy rest (dark and quiet) until it's switched back on
+function renderPower() {
+  if (!saved) return;
+  const on = saved.powerOn !== false;
+  const name = (draft && draft.name) || "Dewy";
+  $("powerSwitch").checked = on;
+  $("powerSwitch").setAttribute("aria-label", name + " on");
+  $("powerTitle").textContent = name + (on ? " is on" : " is resting");
+  $("powerHint").textContent = on ? "Awake, chatty and reminding you." : "Dark and quiet: no reminders or talking. Alarms still ring.";
+}
+async function setPower(on) {
+  const sw = $("powerSwitch");
+  sw.disabled = true;
+  try {
+    // send only the switch, so half-finished edits elsewhere stay unsaved
+    const r = await api("PUT", "/api/settings", { token, body: { rev, settings: { ...saved, powerOn: on } } });
+    const dirty = isDirty();
+    saved = r.settings; rev = r.rev;
+    if (dirty) draft.powerOn = on; else draft = clone(saved);
+    renderAll();
+    toast(on ? "Waking Dewy up..." : "Dewy is going to rest.");
+  } catch (e) {
+    if (e.status === 409) { saved = e.data.settings; rev = e.data.rev; if (!isDirty()) draft = clone(saved); }
+    renderPower();
+    toast(e.message, true);
+  } finally { sw.disabled = false; }
+}
+
+// the bond grows on Dewy itself (pets, pokes, pick-ups); Dewy reports it when it checks in
+const BOND_LEVELS = [
+  [0.00, "Stranger", "Dewy is still shy. Pet it (hold a finger on its face) to say hello."],
+  [0.10, "Friend", "Dewy says hi when you come back."],
+  [0.35, "Close friend", "Little hearts float up now and then."],
+  [0.65, "Best friend", "More hearts, and Dewy puts up with more poking."],
+  [0.90, "Soulmate", "The biggest welcomes. Dewy adores you."],
+];
+function renderBond() {
+  const b = me && me.dewy ? me.dewy.bond : null;
+  $("bondCard").hidden = typeof b !== "number";
+  if (typeof b !== "number") return;
+  let i = 0;
+  for (let k = 1; k < BOND_LEVELS.length; k++) if (b >= BOND_LEVELS[k][0]) i = k;
+  const lo = BOND_LEVELS[i][0], hi = i + 1 < BOND_LEVELS.length ? BOND_LEVELS[i + 1][0] : 1;
+  const pct = Math.round(Math.max(0, Math.min(1, (b - lo) / (hi - lo))) * 100);
+  $("bondLevel").textContent = BOND_LEVELS[i][1];
+  $("bondFill").style.width = pct + "%";
+  $("bondBar").setAttribute("aria-valuenow", String(pct));
+  $("bondHint").textContent = BOND_LEVELS[i][2] + (i + 1 < BOND_LEVELS.length ? ` ${pct}% of the way to ${BOND_LEVELS[i + 1][1].toLowerCase()}.` : "");
 }
 
 // study timer: Dewy runs the real timer; the phone shows a countdown of its own
@@ -252,6 +302,7 @@ function fillSelects() {
   const opt = (v, t) => el("option", { value: v, text: t });
   const every = [[0, "Off"], [30, "Every 30 minutes"], [45, "Every 45 minutes"], [60, "Every hour"], [90, "Every 1½ hours"], [120, "Every 2 hours"], [180, "Every 3 hours"]];
   for (const id of ["remWater", "remStretch"]) $(id).replaceChildren(...every.map(([v, t]) => opt(v, t)));
+  $("snoozeLen").replaceChildren(...[5, 9, 10, 15, 20, 30].map((m) => opt(m, m + " minutes")));
   const hour = (h) => (h === 0 || h === 24 ? "12 am" : h < 12 ? h + " am" : h === 12 ? "12 pm" : h - 12 + " pm");
   $("remFrom").replaceChildren(...Array.from({ length: 24 }, (_, h) => opt(h, hour(h))));
   $("remTo").replaceChildren(...Array.from({ length: 24 }, (_, i) => opt(i + 1, i + 1 === 24 ? "midnight" : hour(i + 1))));
@@ -271,6 +322,8 @@ function renderReminders() {
   ensureOption($("remStretch"), r.stretch, "Every " + r.stretch + " minutes");
   $("remFrom").value = String(r.from); $("remTo").value = String(r.to);
   ensureOption($("studyLen"), draft.studyMinutes, draft.studyMinutes + " minutes");
+  const snooze = draft.snoozeMinutes ?? 9;
+  ensureOption($("snoozeLen"), snooze, snooze + " minutes");
 }
 
 // more
@@ -362,6 +415,7 @@ function undo() { draft = clone(saved); renderAll(); $("alarmEditor").hidden = t
 
 // ---------------------------------------------------------------- events
 function wire() {
+  $("powerSwitch").addEventListener("change", (e) => setPower(e.target.checked));
   $("pairForm").addEventListener("submit", pair);
   $("pairCode").addEventListener("input", (e) => {
     const v = e.target.value.toUpperCase().replace(/[^0-9A-Z]/g, "").slice(0, 8);
@@ -387,6 +441,7 @@ function wire() {
     changed();
   };
   for (const id of ["remWater", "remStretch", "remFrom", "remTo"]) $(id).addEventListener("change", remind);
+  $("snoozeLen").addEventListener("change", () => { draft.snoozeMinutes = Number($("snoozeLen").value); changed(); });
   $("studyLen").addEventListener("change", () => { draft.studyMinutes = Number($("studyLen").value); minutes = draft.studyMinutes; renderTimer(); changed(); });
 
   $("setName").addEventListener("input", () => { const v = $("setName").value.trim(); if (v) { draft.name = v.slice(0, 20); renderStatus(); changed(); } });

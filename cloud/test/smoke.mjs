@@ -132,6 +132,40 @@ let last;
 for (let i = 0; i < 30; i++) last = await call("POST", "/api/notes", { token: owner, body: { text: "note " + i } });
 check("the 31st note of the day is refused", last.status === 429, last);
 
+// --- on/off switch and the bond
+r = await call("GET", "/api/settings", { token: owner });
+check("settings include the switch, on by default", r.status === 200 && r.data.settings.powerOn === true, r);
+let cur = r.data;
+r = await call("PUT", "/api/settings", { token: owner, body: { rev: cur.rev, settings: { ...cur.settings, powerOn: "no" } } });
+check("a switch that isn't true/false is refused", r.status === 400, r);
+r = await call("PUT", "/api/settings", { token: owner, body: { rev: cur.rev, settings: { ...cur.settings, powerOn: false } } });
+check("switch Dewy off", r.status === 200 && r.data.settings.powerOn === false, r);
+r = await call("GET", "/api/device/sync?rev=" + cur.rev, { token: dev });
+check("Dewy hears it is switched off", r.data.settings?.powerOn === false, r.data);
+const { powerOn: _drop, ...oldShape } = r.data.settings;
+r = await call("GET", "/api/settings", { token: owner });
+r = await call("PUT", "/api/settings", { token: owner, body: { rev: r.data.rev, settings: oldShape } });
+check("an older app without the switch saves as on", r.status === 200 && r.data.settings.powerOn === true, r);
+r = await call("GET", "/api/settings", { token: owner });
+check("snooze is 9 minutes by default", r.data.settings.snoozeMinutes === 9, r.data);
+cur = r.data;
+r = await call("PUT", "/api/settings", { token: owner, body: { rev: cur.rev, settings: { ...cur.settings, snoozeMinutes: 45 } } });
+check("snooze longer than 30 minutes is refused", r.status === 400, r);
+r = await call("PUT", "/api/settings", { token: owner, body: { rev: cur.rev, settings: { ...cur.settings, snoozeMinutes: 5 } } });
+check("snooze can be set to 5 minutes", r.status === 200 && r.data.settings.snoozeMinutes === 5, r);
+r = await call("GET", "/api/me", { token: owner });
+check("no bond shown before Dewy reports one", r.data.dewy.bond === null && r.data.dewy.powerOn === true, r.data);
+r = await call("GET", "/api/device/sync?rev=0&bond=420", { token: dev });
+r = await call("GET", "/api/me", { token: owner });
+check("Dewy's bond reaches the app", r.data.dewy.bond === 0.42, r.data);
+r = await call("GET", "/api/device/sync?rev=0&bond=5000", { token: dev });
+r = await call("GET", "/api/device/sync?rev=0&bond=-3", { token: dev });
+r = await call("GET", "/api/me", { token: owner });
+check("bad bond numbers are ignored", r.data.dewy.bond === 0.42, r.data);
+r = await call("POST", "/api/links", { token: owner, body: { label: "Abijit" } });
+r = await call("GET", "/api/me", { token: r.data.url.split("#")[1] });
+check("a notes link doesn't see the bond", r.status === 200 && r.data.dewy.bond === null, r.data);
+
 // --- misc
 r = await call("GET", "/api/nothing");
 check("unknown API path is a 404", r.status === 404, r);

@@ -21,6 +21,7 @@ type Role = "owner" | "notes";
 interface DeviceRow {
   id: string; token_hash: string; created_at: number; last_seen: number | null; fw_version: string | null;
   pair_code: string | null; pair_expires: number | null; settings: string; settings_rev: number;
+  bond?: number | null;      // 0-1000, how close Dewy feels to its person (reported by the device)
 }
 interface TokenRow { id: string; device_id: string; role: Role; label: string }
 
@@ -155,7 +156,11 @@ async function deviceSync(req: Request, env: Env, url: URL): Promise<Response> {
   const fw = /^\d+\.\d+\.\d+$/.test(fwHeader) ? fwHeader : d.fw_version;
   const t = now();
 
-  const stmts = [env.DB.prepare("UPDATE devices SET last_seen = ?1, fw_version = ?2 WHERE id = ?3").bind(t, fw, d.id)];
+  const bondParam = url.searchParams.get("bond");
+  const bond = bondParam !== null && /^\d{1,4}$/.test(bondParam) && Number(bondParam) <= 1000 ? Number(bondParam) : null;
+  const stmts = [bond === null
+    ? env.DB.prepare("UPDATE devices SET last_seen = ?1, fw_version = ?2 WHERE id = ?3").bind(t, fw, d.id)
+    : env.DB.prepare("UPDATE devices SET last_seen = ?1, fw_version = ?2, bond = ?3 WHERE id = ?4").bind(t, fw, bond, d.id)];
   if (Number.isInteger(ack) && ack > 0)
     stmts.push(env.DB.prepare("UPDATE events SET delivered_at = ?1 WHERE device_id = ?2 AND id <= ?3 AND delivered_at IS NULL").bind(t, d.id, ack));
   await env.DB.batch(stmts);
@@ -204,14 +209,19 @@ async function appMe(req: Request, env: Env): Promise<Response> {
   const s = JSON.parse(d.settings) as Settings;
   return json({
     role: t.role, label: t.label, id: t.id,
-    dewy: { name: s.name, online: (d.last_seen ?? 0) > now() - ONLINE_SECONDS, lastSeen: d.last_seen, firmware: d.fw_version },
+    dewy: {
+      name: s.name, online: (d.last_seen ?? 0) > now() - ONLINE_SECONDS, lastSeen: d.last_seen, firmware: d.fw_version,
+      powerOn: s.powerOn !== false,
+      // the bond is between Dewy and its owner, so note links don't see it
+      bond: t.role === "owner" && typeof d.bond === "number" ? d.bond / 1000 : null,
+    },
   });
 }
 
 async function getSettings(req: Request, env: Env): Promise<Response> {
   const t = await appAuth(req, env, ["owner"]);
   const d = await loadDevice(env, t.device_id);
-  return json({ rev: d.settings_rev, settings: JSON.parse(d.settings) });
+  return json({ rev: d.settings_rev, settings: { ...DEFAULT_SETTINGS, ...JSON.parse(d.settings) } });
 }
 
 async function putSettings(req: Request, env: Env): Promise<Response> {
@@ -221,7 +231,7 @@ async function putSettings(req: Request, env: Env): Promise<Response> {
   if (!v.ok) throw new HttpError(400, v.error);
   const d = await loadDevice(env, t.device_id);
   if (typeof body.rev === "number" && body.rev !== d.settings_rev)
-    return json({ error: "Changed on another phone. Here are the latest settings.", rev: d.settings_rev, settings: JSON.parse(d.settings) }, 409);
+    return json({ error: "Changed on another phone. Here are the latest settings.", rev: d.settings_rev, settings: { ...DEFAULT_SETTINGS, ...JSON.parse(d.settings) } }, 409);
   const r = await env.DB.prepare("UPDATE devices SET settings = ?1, settings_rev = settings_rev + 1 WHERE id = ?2 RETURNING settings_rev")
     .bind(JSON.stringify(v.value), d.id).first<{ settings_rev: number }>();
   return json({ rev: r!.settings_rev, settings: v.value });

@@ -1,6 +1,7 @@
 #include "Arduino.h"
 #include "Wire.h"
 SerialT Serial; TwoWire Wire; float g_acc[3] = { 0, 0, 1 }; int g_wifiStatus = 3;
+#include "wake_stub.h"
 #include "../dewy/dewy.ino"
 namespace lgfx { inline namespace v1 { namespace fonts { const GFXfont FreeSansBold12pt7b{}, FreeSansBold18pt7b{}, FreeSansBold24pt7b{}; } } }
 static void hold(float x, float y, float z, int loops) { g_acc[0] = x; g_acc[1] = y; g_acc[2] = z; for (int i = 0; i < loops; i++) loop(); }
