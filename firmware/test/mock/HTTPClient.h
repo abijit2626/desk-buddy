@@ -13,6 +13,7 @@ inline std::function<MockReply(const std::string&, const std::string&, const std
   };
 inline size_t g_lastPostBytes = 0;   // size of the last binary POST body
 struct HTTPClient {
+  static String errorToString(int) { return String("connection refused"); }
   std::string url, headers, resp, ua = "ESP32HTTPClient"; std::map<std::string, std::string> rh; bool chunked = false; WiFiClient* cl = nullptr;
   bool begin(WiFiClient& c, const char* u) { cl = &c; url = u; headers.clear(); return true; }
   bool begin(WiFiClient& c, const String& u) { return begin(c, u.c_str()); }

@@ -10,6 +10,8 @@
 #include <Update.h>
 #include <ArduinoJson.h>
 #include "mbedtls/sha256.h"
+#include <esp_heap_caps.h>
+#include <time.h>
 #include "cacerts.h"
 
 // ---------------------------------------------------------------- settings (from the phone app)
@@ -134,6 +136,12 @@ static int httpsJson(const char* method, const String& url, const char* body, Js
   int code;
   if (strcmp(method, "GET") == 0) code = http.GET();
   else { http.addHeader("Content-Type", "application/json"); code = http.POST(body ? body : "{}"); }
+  if (code < 0) {   // no answer at all: say why (TLS, DNS, memory), so a failed connection isn't a mystery
+    char err[96] = ""; client.lastError(err, sizeof err);
+    Serial.printf("[cloud] %s %s failed: %s | TLS: %s | free internal RAM %u (largest block %u), clock %lu\n", method, url.c_str(),
+                  http.errorToString(code).c_str(), err[0] ? err : "-", unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
+                  unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)), (unsigned long)time(nullptr));
+  }
   if (code > 0 && out) {
     String payload = http.getString();
     if (deserializeJson(*out, payload.c_str())) out->clear();
@@ -146,6 +154,7 @@ static int httpsJson(const char* method, const String& url, const char* body, Js
 static Preferences netPrefs;
 static int knownRev = 0, lastQueued = 0;
 
+static int lastRegisterCode = 0;
 static bool cloudRegister() {
   JsonDocument d;
   String body = String("{\"fw\":\"") + DEWY_VERSION + "\"}";
@@ -153,6 +162,7 @@ static bool cloudRegister() {
   const char* tok = d["token"] | "";
   if (code != 201 || strlen(tok) < 20 || strlen(tok) >= sizeof deviceToken) {
     Serial.printf("[cloud] couldn't register (HTTP %d)%s\n", code, code == 403 ? ": DEWY_REGISTER_KEY doesn't match the server's REGISTER_KEY" : "");
+    lastRegisterCode = code;
     return false;
   }
   strcpy(deviceToken, tok);
@@ -308,7 +318,7 @@ static void netTask(void*) {
     uint32_t now = millis();
     if (WiFi.status() == WL_CONNECTED) {
       if (cloudOn()) {
-        if (!deviceToken[0] && int32_t(now - nextRegister) >= 0) { if (!cloudRegister()) nextRegister = now + 10UL * 60UL * 1000UL; }
+        if (!deviceToken[0] && int32_t(now - nextRegister) >= 0) { if (!cloudRegister()) nextRegister = now + (lastRegisterCode < 0 ? 30UL * 1000UL : 10UL * 60UL * 1000UL); }   // no connection: try again soon
         if (deviceToken[0] && int32_t(now - nextSync) >= 0) {
           cloudSync();
           nextSync = millis() + (dewyAsleep ? SYNC_ASLEEP_MS : SYNC_AWAKE_MS);
