@@ -188,20 +188,29 @@ inline void strokeSegs(Canvas& cv, const Seg* s, int n, float width, RGB c, floa
   // touch (where its y is within reach of the row), and the nearest distance is kept per pixel in a row buffer.
   // Spirals and wavy mouths have many short segments on a row: this skips most of the pairs.
   static float rb[W];
-  const float R = r + 1.5f;
+  const float R = r + 0.5f, R2 = R * R;   // a pixel centre is drawn when it is closer than R to the segment
   for (int y = y0; y < y1; y++) {
     float py = y + 0.5f - cv.ty;
     int ux0 = x1, ux1 = x0 - 1;
     for (int i = 0; i < n; i++) {
       if (py < slo[i] || py > shi[i]) continue;                     // segment not near this row
-      float lo, hi;                                                  // x range of the part of the segment within R of the row
-      if (fabsf(sdy[i]) > 1e-6f) {
-        float ta = (py - R - s[i].y0) / sdy[i], tb = (py + R - s[i].y0) / sdy[i];
-        float t0 = clampf(fmn(ta, tb), 0, 1), t1 = clampf(fmx(ta, tb), 0, 1);
-        float xa = s[i].x0 + sdx[i] * t0, xb = s[i].x0 + sdx[i] * t1;
-        lo = fmn(xa, xb); hi = fmx(xa, xb);
-      } else { lo = fmn(s[i].x0, s[i].x1); hi = fmx(s[i].x0, s[i].x1); }
-      int xa = int(floorf(lo + cv.tx - R)) - 1, xb = int(ceilf(hi + cv.tx + R)) + 1;
+      // Where this row crosses the segment's reach (a capsule: two end circles and the band between them). The
+      // capsule is convex, so the crossing is one stretch: the hull of what each of the three pieces gives.
+      float lo = 1e9f, hi = -1e9f, ry0 = py - s[i].y0, ry1 = py - s[i].y1;
+      if (ry0 * ry0 < R2) { float q = sqrtf(R2 - ry0 * ry0); lo = fmn(lo, s[i].x0 - q); hi = fmx(hi, s[i].x0 + q); }
+      if (ry1 * ry1 < R2) { float q = sqrtf(R2 - ry1 * ry1); lo = fmn(lo, s[i].x1 - q); hi = fmx(hi, s[i].x1 + q); }
+      if (sinv[i] > 0) {
+        float dx = sdx[i], dy = sdy[i], L = 1.f / sqrtf(sinv[i]), bl = -1e9f, bh = 1e9f;
+        // between the ends: 0 <= ((px - x0) dx + ry0 dy) / L^2 <= 1
+        if (fabsf(dx) > 1e-6f) { float a = s[i].x0 - ry0 * dy / dx, b = a + L * L / dx; bl = fmx(bl, fmn(a, b)); bh = fmn(bh, fmx(a, b)); }
+        else if (ry0 * dy < 0 || ry0 * dy > L * L) bh = -1e9f;
+        // close to the line: |(px - x0) dy - ry0 dx| < R L
+        if (fabsf(dy) > 1e-6f) { float a = s[i].x0 + (ry0 * dx - R * L) / dy, b = s[i].x0 + (ry0 * dx + R * L) / dy; bl = fmx(bl, fmn(a, b)); bh = fmn(bh, fmx(a, b)); }
+        else if (fabsf(ry0 * dx) >= R * L) bh = -1e9f;
+        if (bl <= bh) { lo = fmn(lo, bl); hi = fmx(hi, bh); }
+      }
+      if (lo > hi) continue;
+      int xa = int(ceilf(lo + cv.tx - 0.5f - 0.01f)), xb = int(floorf(hi + cv.tx - 0.5f + 0.01f));   // px = x + 0.5 - tx
       if (xa < x0) xa = x0;
       if (xb > x1 - 1) xb = x1 - 1;
       if (xa > xb) continue;
