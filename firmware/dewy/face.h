@@ -184,20 +184,39 @@ inline void strokeSegs(Canvas& cv, const Seg* s, int n, float width, RGB c, floa
   int x0, y0, x1, y1;
   cv.bounds(minx + cv.tx - r - 1, miny + cv.ty - r - 1, maxx + cv.tx + r + 1, maxy + cv.ty + r + 1, x0, y0, x1, y1);
   const float reach = (r + 0.5f) * (r + 0.5f), solid = r > 0.5f ? (r - 0.5f) * (r - 0.5f) : -1.f;
-  static uint8_t act[160];
+  // Each segment only reaches the pixels near it, so per row it is measured against just the stretch of x it can
+  // touch (where its y is within reach of the row), and the nearest distance is kept per pixel in a row buffer.
+  // Spirals and wavy mouths have many short segments on a row: this skips most of the pairs.
+  static float rb[W];
+  const float R = r + 1.5f;
   for (int y = y0; y < y1; y++) {
     float py = y + 0.5f - cv.ty;
-    int na = 0;
-    for (int i = 0; i < n; i++) if (py >= slo[i] && py <= shi[i]) act[na++] = uint8_t(i);   // segments near this row
-    if (!na) continue;
-    for (int x = x0; x < x1; x++) {
-      float px = x + 0.5f - cv.tx, best = 1e9f;
-      for (int k = 0; k < na; k++) {
-        int i = act[k];
+    int ux0 = x1, ux1 = x0 - 1;
+    for (int i = 0; i < n; i++) {
+      if (py < slo[i] || py > shi[i]) continue;                     // segment not near this row
+      float lo, hi;                                                  // x range of the part of the segment within R of the row
+      if (fabsf(sdy[i]) > 1e-6f) {
+        float ta = (py - R - s[i].y0) / sdy[i], tb = (py + R - s[i].y0) / sdy[i];
+        float t0 = clampf(fmn(ta, tb), 0, 1), t1 = clampf(fmx(ta, tb), 0, 1);
+        float xa = s[i].x0 + sdx[i] * t0, xb = s[i].x0 + sdx[i] * t1;
+        lo = fmn(xa, xb); hi = fmx(xa, xb);
+      } else { lo = fmn(s[i].x0, s[i].x1); hi = fmx(s[i].x0, s[i].x1); }
+      int xa = int(floorf(lo + cv.tx - R)) - 1, xb = int(ceilf(hi + cv.tx + R)) + 1;
+      if (xa < x0) xa = x0;
+      if (xb > x1 - 1) xb = x1 - 1;
+      if (xa > xb) continue;
+      if (ux0 > ux1) { for (int x = xa; x <= xb; x++) rb[x] = 1e9f; ux0 = xa; ux1 = xb; }   // grow the row's touched range,
+      if (xa < ux0) { for (int x = xa; x < ux0; x++) rb[x] = 1e9f; ux0 = xa; }               // clearing the cells it gains
+      if (xb > ux1) { for (int x = ux1 + 1; x <= xb; x++) rb[x] = 1e9f; ux1 = xb; }
+      for (int x = xa; x <= xb; x++) {
+        float px = x + 0.5f - cv.tx;
         float t = clampf(((px - s[i].x0) * sdx[i] + (py - s[i].y0) * sdy[i]) * sinv[i], 0, 1);
         float ex = s[i].x0 + sdx[i] * t - px, ey = s[i].y0 + sdy[i] * t - py, d2 = ex * ex + ey * ey;
-        if (d2 < best) best = d2;
+        if (d2 < rb[x]) rb[x] = d2;
       }
+    }
+    for (int x = ux0; x <= ux1; x++) {
+      float best = rb[x];
       if (best >= reach) continue;                                   // outside: no square root needed
       float cov = best <= solid ? 1.f : clampf(r + 0.5f - sqrtf(best), 0, 1);
       if (cov > 0) cv.put(x, y, c, cov * alpha);
@@ -536,6 +555,13 @@ inline void drawString(Canvas& cv, const Font& f, int ss, const char* s, float x
   float base = ymid + capHeight(f, ss) / 2 + cv.ty;
   int penX = int(lroundf(left * ss)), baseY = int(lroundf(base * ss));
   float inv = 1.f / float(ss * ss);
+  // what put() would do for each possible count (0..ss*ss), worked out once: 0 = skip, 33 = solid, else blend weight
+  const uint16_t pk = pack(c);
+  uint8_t wt[17] = { 0 };
+  for (int k = 1; k <= ss * ss && k < 17; k++) {
+    float a = alpha * k * inv;
+    wt[k] = a <= 0.004f ? 0 : (a >= 0.996f ? 33 : uint8_t(uint32_t(a * 32.f + 0.5f)));
+  }
   for (int i = 0; s[i] && (n < 0 || i < n); i++) {
     const Glyph* g = glyphOf(f, s[i]);
     if (!g) continue;
@@ -546,21 +572,31 @@ inline void drawString(Canvas& cv, const Font& f, int ss, const char* s, float x
       if (sy1 >= cv.cy1) sy1 = cv.cy1 - 1;
       if (sx0 < cv.cx0) sx0 = cv.cx0;
       if (sx1 >= cv.cx1) sx1 = cv.cx1 - 1;
-      for (int sy = sy0; sy <= sy1; sy++) {
-        for (int sx = sx0; sx <= sx1; sx++) {
-          int cnt = 0;
-          for (int v = 0; v < ss; v++) {
-            int by = sy * ss + v - gy;
-            if (by < 0 || by >= g->h) continue;
-            for (int u = 0; u < ss; u++) {
-              int bx = sx * ss + u - gx;
-              if (bx < 0 || bx >= g->w) continue;
-              uint32_t bit = uint32_t(by) * g->w + uint32_t(bx);
-              if (f.bits[g->off + (bit >> 3)] & (0x80 >> (bit & 7))) cnt++;
-            }
+      // count the set font pixels under each screen pixel, walking the glyph's bits row by row
+      static uint8_t cnt[W];
+      int bxa = sx0 * ss - gx, bxb = (sx1 + 1) * ss - 1 - gx;
+      if (bxa < 0) bxa = 0;
+      if (bxb > g->w - 1) bxb = g->w - 1;
+      for (int sy = sy0; sy <= sy1 && sx0 <= sx1; sy++) {
+        memset(cnt, 0, size_t(sx1 - sx0 + 1));
+        for (int v = 0; v < ss; v++) {
+          int by = sy * ss + v - gy;
+          if (by < 0 || by >= g->h) continue;
+          uint32_t bit = uint32_t(by) * g->w + uint32_t(bxa);
+          int col = (gx + bxa) / ss - sx0, sub = (gx + bxa) % ss;   // gx + bx >= sx0 * ss >= 0 here
+          for (int bx = bxa; bx <= bxb; bx++, bit++) {
+            if (f.bits[g->off + (bit >> 3)] & (0x80 >> (bit & 7))) cnt[col]++;
+            if (++sub == ss) { sub = 0; col++; }
           }
-          if (cnt) cv.put(sx, sy, c, alpha * cnt * inv);
         }
+        uint16_t* row = cv.fb + sy * W;                              // sx0..sx1 and sy are inside the clip
+        if (ss * ss < 17) {
+          for (int sx = sx0; sx <= sx1; sx++) {
+            int k = cnt[sx - sx0]; if (!k) continue;
+            uint8_t w8 = wt[k];
+            if (w8 == 33) row[sx] = pk; else if (w8) row[sx] = blend565(row[sx], pk, w8);
+          }
+        } else for (int sx = sx0; sx <= sx1; sx++) { int k = cnt[sx - sx0]; if (k) cv.put(sx, sy, c, alpha * k * inv); }
       }
     }
     penX += g->adv;
