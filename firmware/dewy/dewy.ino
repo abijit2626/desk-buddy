@@ -28,6 +28,7 @@
 #include <time.h>
 #include <sys/time.h>
 #include <esp_heap_caps.h>
+#include <esp_task_wdt.h>
 #include <esp_memory_utils.h>
 #include "config.h"
 #include "display.h"
@@ -912,10 +913,16 @@ void setup() {
 
   startWifi();
   voiceBegin();
-  // Core 0 runs the wake word all the time, and the network task's HTTPS handshakes are seconds of maths on the same
-  // core (the S3 has no hardware for the elliptic-curve part). Together they can keep core 0's idle task from running
-  // for 5 s, and the watchdog then restarts Dewy. Both tasks still yield to each other; only that idle check goes.
-  disableCore0WDT();
+  // Core 0 runs the wake word all the time, and HTTPS handshakes (network and voice tasks) are seconds of maths on the
+  // same core (the S3 has no hardware for the elliptic-curve part). Together they can keep core 0's idle task from
+  // running for 5 s, and the watchdog then restarts Dewy. So the watchdog stops checking the idle tasks; it still
+  // watches any task that signs up to it. (disableCore0WDT() looked right but left the idle hook calling for a task
+  // that was gone: "esp_task_wdt_reset: task not found" many times a second.)
+  esp_task_wdt_config_t wdt = {};
+  wdt.timeout_ms = CONFIG_ESP_TASK_WDT_TIMEOUT_S * 1000;
+  wdt.idle_core_mask = 0;
+  wdt.trigger_panic = true;
+  esp_task_wdt_reconfigure(&wdt);
   lastInteract = lastFrame = millis();
   Serial.println("Type \"help\" for test commands.");
 }
