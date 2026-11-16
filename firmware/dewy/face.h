@@ -977,6 +977,9 @@ public:
 
     float blushA = c[BLUSH] * (0.75f + 0.25f * sinf(t / 190));
     blushA = fmx(blushA, affection * 0.55f);          // a fond buddy has rosy cheeks even at rest
+    // while the 8-ball answer is fully up, the face behind it is not drawn (it would only show at 15% anyway)
+    const bool faceHidden = eightAt >= 0 && t >= eightAt && fade(t - eightAt, 4200, 700, 700) >= 1.f;
+    if (!faceHidden) {
     { ProfTimer pt(0);
     fillEllipse(cv, 48, 170, 24, 10, blushC, blushA);
     fillEllipse(cv, 272, 170, 24, 10, blushC, blushA); }
@@ -1061,7 +1064,8 @@ public:
       if (c[MALARM] > 0.01f) { fillEllipse(cv, 160, 204, 15, 12, blushC, c[MALARM]); strokeEllipse(cv, 160, 204, 15, 12, 4, eye, c[MALARM]); }
     }
     pmo->~ProfTimer();
-    { ProfTimer pt(7); drawPartyHat(cv);
+    }
+    { ProfTimer pt(7); if (!faceHidden) drawPartyHat(cv);
     cv.tx = 0; cv.ty = 0;
     drawOverlays(cv, eye, acc); }
     { ProfTimer pt(8); if (upside) flip180(cv); }
