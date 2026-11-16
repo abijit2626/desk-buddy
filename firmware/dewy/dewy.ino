@@ -744,6 +744,7 @@ static void pollSerial() {
   }
 }
 
+static uint32_t lastTouchMs = 0;   // pressing the screen tips Dewy a little: that is not a pick-up
 static void pollTouch(uint32_t now) {
 #if TOUCH_ENABLED
   static bool touching = false, petting = false, swallow = false;
@@ -752,7 +753,7 @@ static void pollTouch(uint32_t now) {
   int32_t x, y;
   bool down = tft.getTouch(&x, &y) > 0;
   if (down) {
-    lastSeen = now;
+    lastSeen = now; lastTouchMs = now;
     if (!touching) { touching = true; petting = false; downAt = now; personHere(now); }
     else if (ringing && now - downAt > ALARM_HOLD_STOP_MS) { swallow = true; alarmStop(); return; }   // hold = stop the alarm
     else if (!petting && now - downAt > PET_HOLD_MS && !ringing && buddy.mood() != face::ALARM) { petting = true; buddy.petStart(); addAffection(1); interacted(); }
@@ -786,6 +787,7 @@ static void pollTouch(uint32_t now) {
 static void pollMotion(uint32_t now) {
   Motion::Event e = motion.poll(now);
   if (e == Motion::NONE || buddy.faceDown()) return;        // lying on its face: ignore bumps
+  if (e == Motion::PICKUP && lastTouchMs && now - lastTouchMs < 700) return;
   interacted();
   if (ringing) { alarmSnooze(); return; }                   // shake or lift to snooze
   if (e == Motion::SHAKE && lastTapAt && now - lastTapAt < EIGHT_BALL_WINDOW_MS) {

@@ -29,7 +29,12 @@ public:
     lastRead = now;
     float a[3];
     if (!readAccel(a)) return NONE;
-    if (!primed) { for (int i = 0; i < 3; i++) prev[i] = base[i] = a[i]; primed = true; stillSince = now; return NONE; }
+    return feed(now, a);
+  }
+
+  // the detector itself, one accelerometer reading (in g) at a time
+  Event feed(uint32_t now, const float a[3]) {
+    if (!primed) { for (int i = 0; i < 3; i++) prev[i] = base[i] = anchor[i] = a[i]; primed = true; stillSince = now; return NONE; }
 
     float jerk = dist(a, prev);
     for (int i = 0; i < 3; i++) prev[i] = a[i];
@@ -39,38 +44,43 @@ public:
       if (nj < 8) jolts[nj++] = now;
       int k = 0; for (int i = 0; i < nj; i++) if (now - jolts[i] < 1000) jolts[k++] = jolts[i];
       nj = k;
-      if (nj >= 4 && now > shakeCooldown) { nj = 0; shakeCooldown = now + 2500; liftCooldown = now + 2500; atRest = false; stillSince = now; return SHAKE; }
+      if (nj >= 4 && now > shakeCooldown) { nj = 0; shakeCooldown = now + 2500; liftCooldown = now + 2500; onDesk = false; offStart = 0; return SHAKE; }
     }
 
-    // resting: almost no movement for 0.8 s; remember which way gravity points
-    if (jerk < 0.04f) {
-      if (now - stillSince > 800) {
-        if (!atRest) { for (int i = 0; i < 3; i++) base[i] = a[i]; atRest = true; }
-        for (int i = 0; i < 3; i++) base[i] += (a[i] - base[i]) * 0.02f;
+    // On the desk: every reading for 1.5 s stays within 0.035 g of where the quiet spell began. Sensor noise is
+    // far below that; a hand holding Dewy wobbles more, so being held never counts as resting on the desk.
+    if (dist(a, anchor) > 0.035f) { for (int i = 0; i < 3; i++) anchor[i] = a[i]; stillSince = now; }
+    if (now - stillSince > 1500) {
+      float d = dist(a, base);
+      if (!onDesk || d >= 0.05f) for (int i = 0; i < 3; i++) base[i] = a[i];   // just put down, or settled a bit
+      else for (int i = 0; i < 3; i++) base[i] += (a[i] - base[i]) * 0.02f;     // follow slow drift
+      onDesk = true; offStart = 0;
+    }
+
+    // Pick-up: it was resting on the desk, then gravity stays off its resting value (tilted about 7 degrees, or
+    // pushed up or down by 0.12 g) for 0.15 s. A tap on the screen only jolts it for a few hundredths of a
+    // second and a shake is all big jolts, so neither counts. Putting it back down is not a pick-up: it only
+    // counts as on the desk again once it has rested there.
+    if (onDesk) {
+      float dev = dist(a, base);
+      if (dev > 0.12f) { if (!offStart) offStart = now; lastOff = now; }
+      else if (offStart && now - lastOff > 60) offStart = 0;     // back where it was (short dips are allowed)
+      bool jolting = nj > 0 && now - jolts[nj - 1] < 300;
+      if (offStart && now - offStart >= 150 && dev > 0.12f && !jolting && now > liftCooldown) {
+        onDesk = false; offStart = 0; liftCooldown = now + 3000; return PICKUP;
       }
-    } else {
-      stillSince = now;
-    }
-
-    // pick-up: it was resting, then gravity changes size or direction for a few samples
-    if (atRest) {
-      float mag = sqrtf(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
-      float bmag = sqrtf(base[0] * base[0] + base[1] * base[1] + base[2] * base[2]);
-      float cosang = (a[0] * base[0] + a[1] * base[1] + a[2] * base[2]) / fmaxf(1e-3f, mag * bmag);
-      bool lifted = fabsf(mag - bmag) > 0.18f || cosang < 0.95f;   // about 18 degrees of tilt
-      liftCount = lifted ? liftCount + 1 : 0;
-      if (liftCount >= 3 && now > liftCooldown) { atRest = false; liftCount = 0; liftCooldown = now + 3000; stillSince = now; return PICKUP; }
     }
     return NONE;
   }
 
 private:
   TwoWire* wire = nullptr;
-  bool ok = false, primed = false, atRest = false;
+  bool ok = false, primed = false, onDesk = false;
   uint8_t who = 0;
   uint32_t lastRead = 0, stillSince = 0, shakeCooldown = 0, liftCooldown = 0, jolts[8];
-  int nj = 0, liftCount = 0;
-  float prev[3], base[3];
+  int nj = 0;
+  uint32_t offStart = 0, lastOff = 0;
+  float prev[3], base[3], anchor[3];
 
   static float dist(const float* a, const float* b) {
     float x = a[0] - b[0], y = a[1] - b[1], z = a[2] - b[2];
