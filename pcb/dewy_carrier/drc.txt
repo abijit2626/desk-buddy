@@ -1,0 +1,56 @@
+** Drc report for dewy_carrier.kicad_pcb **
+** Created on 2026-11-16 22:58:23 **
+
+** Found 14 DRC violations **
+[silk_overlap]: Silkscreen overlap
+    Rule: board setup constraints silk; Severity: warning
+    @(138.1000 mm, 114.3000 mm): Circle on F.Silkscreen
+    @(134.1950 mm, 112.1000 mm): PCB Text '+' on F.Silkscreen
+[silk_overlap]: Silkscreen overlap
+    Rule: board setup constraints silk; Severity: warning
+    @(120.7300 mm, 121.2850 mm): PCB Text 'J3 5V IN' on F.Silkscreen
+    @(108.2500 mm, 121.9200 mm): PCB Text 'SD_MISO NC' on F.Silkscreen
+[lib_footprint_issues]: The current configuration does not include the library ''.
+    Local override; Severity: warning
+    @(190.1700 mm, 114.3000 mm): Footprint H1
+[lib_footprint_issues]: The current configuration does not include the library ''.
+    Local override; Severity: warning
+    @(124.1300 mm, 121.2850 mm): Footprint J3
+[lib_footprint_issues]: The current configuration does not include the library ''.
+    Local override; Severity: warning
+    @(193.9800 mm, 70.4850 mm): Footprint U1
+[lib_footprint_issues]: The current configuration does not include the library ''.
+    Local override; Severity: warning
+    @(119.0500 mm, 64.7700 mm): Footprint J2
+[lib_footprint_issues]: The current configuration does not include the library ''.
+    Local override; Severity: warning
+    @(146.9900 mm, 106.0450 mm): Footprint U3
+[lib_footprint_issues]: The current configuration does not include the library ''.
+    Local override; Severity: warning
+    @(136.1950 mm, 114.3000 mm): Footprint C1
+[lib_footprint_issues]: The current configuration does not include the library ''.
+    Local override; Severity: warning
+    @(124.7650 mm, 83.1850 mm): Footprint H2
+[lib_footprint_issues]: The current configuration does not include the library ''.
+    Local override; Severity: warning
+    @(167.3100 mm, 106.0450 mm): Footprint U2
+[lib_footprint_issues]: The current configuration does not include the library ''.
+    Local override; Severity: warning
+    @(103.8100 mm, 73.6600 mm): Footprint J1
+[lib_footprint_issues]: The current configuration does not include the library ''.
+    Local override; Severity: warning
+    @(126.0350 mm, 107.3150 mm): Footprint H3
+[silk_edge_clearance]: Silkscreen clipped by board edge
+    Rule: board setup constraints silk; Severity: warning
+    @(199.6950 mm, 124.0000 mm): Line on Edge.Cuts
+    @(138.0400 mm, 97.1850 mm): Line on F.Silkscreen
+[silk_edge_clearance]: Silkscreen clipped by board edge
+    Rule: board setup constraints silk; Severity: warning
+    @(199.6950 mm, 124.0000 mm): Line on Edge.Cuts
+    @(200.9800 mm, 69.1850 mm): Line on F.Silkscreen
+
+** Found 0 unconnected pads **
+
+** Found 0 Footprint errors **
+
+** End of Report **
