@@ -23,12 +23,18 @@ soldered to it, so there are no jumper wires. Only through-hole parts.
 | C1 | 220 uF electrolytic, 3.81 mm pitch (the long leg goes in the + hole) | back face |
 | H1-H3 | M3 holes for spacers to the screen board | |
 
-## Check these on the real parts before you order
-1. **Which way the screen header runs**: `J1_VCC_AT_TOP` and `J1_VCC_ROW_OUTER` in `design.py`. A photo of the screen's back
-   settles it.
-2. **Where the screen header sits** (`J1_OUTER_X`): assumed at the screen board's left edge seen from the back.
-3. **The screen's mounting holes**: H1-H3 should line up with them so M3 spacers can bolt the two boards together.
+## Checked against the real screen (19 Nov)
+The SmartElex board measures **91 x 64 mm** (the shop listing says 90 x 55, which is wrong). From the measurements and
+a photo of its back (`screen_overlay.png`):
+1. **Header direction**: VCC is on the inner row (nearer the middle of the screen board) and at the bottom end, seen
+   from the back with the header on the left. `J1_VCC_ROW_OUTER = False`, `J1_VCC_AT_TOP = False`.
+2. **Header position**: outer row 2 mm from the screen board's edge, header centred on its 64 mm side.
+3. **Standoffs**: H1 and H3 rest on bare board on the screen's back (clear of the SD slot, the chips and the ribbon).
+   H2 is on the axis of the screen's top-left corner hole, so one M3 screw can go through both boards.
+   Use 11 mm spacers.
 4. **The ESP32 board's row spacing**: both spacings are drilled; solder into the row that fits.
+
+The case: its screen fence is 62 mm tall inside, the screen is 64 mm. Sand or file the fence before fitting.
 
 ## Power
 J3 and the ESP32's 5Vin pin are on the same 5 V line. With the IN-OUT pads bridged, the laptop's USB also feeds
@@ -38,4 +44,4 @@ only powers the ESP32.
 
 ## Status
 Design-rule check: 0 errors, 0 unconnected pads (only silkscreen warnings: the ESP32 outline overhangs the edge on purpose).
-Not yet checked against the real screen header and mounting holes (see above).
+Header and standoff holes checked against the screen's measurements and back photo (see above).

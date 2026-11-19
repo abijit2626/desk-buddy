@@ -96,6 +96,13 @@ The first screen tests were on a spare Waveshare ESP32-S3-ETH board.
 - **Dewy is online:** registered, syncing, and showing the weather.
 - The manual is updated for the new features.
 
+## 19 Nov: measuring the screen
+- Got a ruler. The screen board is 91 x 64 mm, not the 90 x 55 the shop listing says.
+- VCC is on the inner row, at the bottom end. The carrier's screen socket was flipped to match and re-routed.
+- Laid a photo of the screen's back under the carrier: two standoff holes landed on the SD slot and a resistor.
+  Moved them; one now lines up with the screen's own corner hole. DRC: 0 unconnected pads, 43/43 pins correct.
+- The case fence is 62 mm tall and the screen is 64 mm, so the printed case needs sanding.
+
 ## Next
 
 - [ ] Pair the phone, and find out why the alarm face didn't show

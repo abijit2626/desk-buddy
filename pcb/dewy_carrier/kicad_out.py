@@ -88,7 +88,7 @@ text(b, 'SCREEN FACE: only the 40-pin socket J1 goes on this side', 5, -24.5, 1.
 # J1
 j1 = d.j1_pads(); xo = min(p[2] for p in j1); ys = [p[3] for p in j1]
 for layer in (FS, BS): rect(xo - 1.5, min(ys) - 1.5, xo + 2.54 + 1.5, max(ys) + 1.5, layer)
-text(b, 'J1 SCREEN', xo + 4.5, max(ys) + 2.6, 0.9, FS); text(b, 'J1 2x20 SOCKET', xo + 6.0, max(ys) + 2.6, 0.9, BS)
+text(b, 'J1 SCREEN', xo + 10.2, max(ys) + 2.6, 0.9, FS); text(b, 'J1 2x20 SOCKET', xo + 11.7, max(ys) + 2.6, 0.9, BS)
 for c, (a, b2) in enumerate(d.J1_COLS):
     yy = j1[2 * c][3]; lab = (a + ' ' + b2) if d.J1_VCC_ROW_OUTER else (b2 + ' ' + a)
     text(b, lab, xo + 2.54 + 1.9, yy, 0.8, FS, just='left', thick=0.13)

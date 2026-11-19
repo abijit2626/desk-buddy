@@ -6,8 +6,8 @@ G = 0.635                      # routing grid (a quarter of 2.54)
 
 # ---- things to confirm on the real parts before ordering -------------------------------------------------
 ESP_ROW_SPACINGS = (22.86, 25.4)   # both hole rows are on the board, so either dev board width fits
-J1_VCC_ROW_OUTER = True        # True: the VCC/GND/LEDA row is the one nearer the screen board's edge
-J1_VCC_AT_TOP    = True        # True: the VCC end of the header is at the top when the screen is upright
+J1_VCC_ROW_OUTER = False       # True: the VCC/GND/LEDA row is the one nearer the screen board's edge
+J1_VCC_AT_TOP    = False       # True: the VCC end of the header is at the top when the screen is upright
 J1_OUTER_X       = -46.19      # where the header's outer row sits in the case (screen pushed into its fence)
 J1_CENTRE_Y      = 2.0         # header centred on the screen board's height
 
@@ -56,7 +56,9 @@ HEADERS = [
 ]
 CAPS = [dict(ref="C1", x=sx(-13.9), y=sy(-14.0), label="220uF")]      # + pad at x, - pad 3.81 to the right
 TERMINAL = dict(ref="J3", x=sx(-26.0), y=sy(-21.0), label="5V IN")    # +5V pad at x, GND pad 5.08 to the right
-HOLES = [(sx(40.0), sy(-14.0)), (sx(-25.0), sy(17.0)), (sx(-24.0), sy(-7.0))]   # M3, for standoffs that rest on the back of the screen
+# M3 standoff holes, checked against a photo of the screen's back (screen 91 x 64 mm, header 2 mm from its edge):
+# H1 and H3 rest on bare board; H2 is on the axis of the screen's own top-left corner hole, so one screw can go through both.
+HOLES = [(sx(40.0), sy(-14.0)), (-45.31, 31.30), (sx(-26.0), sy(2.0))]
 ANTENNA_KEEPOUT = (45.6, 2.0, 50.0, 32.0)   # no copper under the ESP32's antenna
 
 def j1_pads():
