@@ -44,4 +44,5 @@ only powers the ESP32.
 
 ## Status
 Design-rule check: 0 errors, 0 unconnected pads (only silkscreen warnings: the ESP32 outline overhangs the edge on purpose).
+Every trace, colour-coded: `connections.png`.
 Header and standoff holes checked against the screen's measurements and back photo (see above).
