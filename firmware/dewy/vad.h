@@ -6,8 +6,8 @@
 #include <stdint.h>
 
 #ifndef VAD_MIN_THR
-#define VAD_MIN_THR 150   // the quietest speech it will listen for. A guess from the INMP441 datasheet (speech 0.5 m away is
-                          // roughly 100 to 300 at MIC_SHIFT 14). Tune it with the "mic" serial command: talk and read the rms.
+#define VAD_MIN_THR 150   // the quietest speech it will listen for. Measured on the real mic at MIC_SHIFT 14: room 1200-3000,
+                          // speech 4000-20000, so at MIC_SHIFT 16 about a quarter. Check it with the "mic" serial command.
 #endif
 #define VAD_MAX_THR 2500
 #define VAD_LEARN_FRAMES 12    // with no background level to start from: learn it from the first 0.2 s

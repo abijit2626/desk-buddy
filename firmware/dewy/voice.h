@@ -37,7 +37,8 @@
 #define MIC_TEST 0        // 1 = start with the loudness bar on. You can also toggle it with the "mic" command.
 #endif
 #ifndef MIC_SHIFT
-#define MIC_SHIFT 14      // bigger = quieter mic
+#define MIC_SHIFT 16      // bigger = quieter mic. Measured on the real INMP441 at 14: a quiet room read 1200 to 3000 and
+                          // close talking clipped at 32767, so the end of a question was never found. 16 = a quarter of that.
 #endif
 #ifndef ALARM_VOLUME
 #define ALARM_VOLUME 70   // the alarm's loudest beep, 0 to 100. It starts at about a third of this and gets louder over a minute

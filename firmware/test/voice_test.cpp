@@ -148,7 +148,7 @@ int main() {
         float sec = t / 16000.0f; int frame = int(t / 256);
         bool speaking = sec >= from && sec < to && frame % 7 < 5;
         int v = speaking ? int(level * 1.41f * sinf(t * 0.3f)) : ((t & 1) ? 10 : -10);
-        out[i] = v * (1 << 14);
+        out[i] = v * (1 << MIC_SHIFT);
       }
     };
   };
