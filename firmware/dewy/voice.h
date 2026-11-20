@@ -62,6 +62,7 @@ static uint32_t vTapAt = 0;                 // when a double-tap last started a 
 static char vNotice[128] = "";              // something to show on screen after a turn that went wrong, written by the voice task
 static volatile bool vNoticeNew = false;
 static volatile bool vShowClock = false;    // the question was about the time: show the clock after the answer
+static uint32_t vEndedAt = 0;               // when the last turn ended (main loop only): the speaker can rock Dewy
 static NoiseTracker noiseTrack;             // the room's background level while idle (voice task only)
 static bool micOk = false, vReady = false;
 static bool micTest = (MIC_TEST != 0);
@@ -477,6 +478,7 @@ static void voicePoll(uint32_t now) {
     shown = st;
     interacted();
     if (st == V_IDLE) {
+      vEndedAt = now ? now : 1;
       // The turn is over. Put the happy face back only if the face still wears one of the voice faces: an alarm, quiet
       // time, the complaint about being upside down, or the annoyed face from being poked must stay.
       face::Mood m = buddy.mood();

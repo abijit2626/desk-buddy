@@ -789,6 +789,9 @@ static void pollMotion(uint32_t now) {
   Motion::Event e = motion.poll(now);
   if (e == Motion::NONE || buddy.faceDown()) return;        // lying on its face: ignore bumps
   if (e == Motion::PICKUP && lastTouchMs && now - lastTouchMs < 700) return;
+  // While Dewy talks (and just after), a "lift" is its own speaker rocking it, or a hand steadying it: keep the face
+  // on the answer, so "what time is it?" still ends on the clock.
+  if (e == Motion::PICKUP && (vState != V_IDLE || (vEndedAt && now - vEndedAt < 1000))) return;
   interacted();
   if (ringing) { alarmSnooze(); return; }                   // shake or lift to snooze
   if (e == Motion::SHAKE && lastTapAt && now - lastTapAt < EIGHT_BALL_WINDOW_MS) {
