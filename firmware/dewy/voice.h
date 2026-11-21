@@ -61,6 +61,8 @@ static volatile bool vCancel = false;       // the main loop asks the voice task
 static uint32_t vTapAt = 0;                 // when a double-tap last started a turn (main loop only)
 static char vNotice[128] = "";              // something to show on screen after a turn that went wrong, written by the voice task
 static volatile bool vNoticeNew = false;
+static TaskHandle_t voiceTaskHandle = nullptr;
+static volatile uint32_t voiceBeat = 0;     // the listening loop ticks this every 10 ms; the main loop watches it
 static volatile bool vWakeUp = false;       // "Hey Dewy" while asleep: the main loop wakes the face, nothing else
 static volatile bool vShowClock = false;    // the question was about the time: show the clock after the answer
 static uint32_t vEndedAt = 0;               // when the last turn ended (main loop only): the speaker can rock Dewy
@@ -422,6 +424,7 @@ static bool voiceRequest(bool byWake = false);
 static void voiceTask(void*) {
   int16_t chunk[160];                          // 10 ms of audio
   for (;;) {
+    voiceBeat = millis();
     if (alarmRinging && !vRequested) { alarmRingLoop(); continue; }
     if (!vRequested) {
       if (micTest) { vTaskDelay(pdMS_TO_TICKS(20)); continue; }   // the mic check on the main loop reads the mic instead
@@ -461,7 +464,8 @@ static void voiceBegin() {
   // Priority 2, above the network task (1) on the same core: a check-in with the server held the wake word up for
   // 2.6 s at a time at equal priority, and "Hey Dewy" said then was lost. Listening waits on the mic most of the
   // time, so the network task still gets the rest of the core.
-  xTaskCreatePinnedToCore(voiceTask, "voice", 20480, nullptr, 2, nullptr, 0);
+  xTaskCreatePinnedToCore(voiceTask, "voice", 20480, nullptr, 2, &voiceTaskHandle, 0);
+  Serial.printf("[voice] listening task priority %u\n", voiceTaskHandle ? (unsigned)uxTaskPriorityGet(voiceTaskHandle) : 0u);
   vReady = true;
 }
 

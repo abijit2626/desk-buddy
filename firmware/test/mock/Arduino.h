@@ -59,3 +59,9 @@ typedef uint32_t TickType_t;
 #define pdMS_TO_TICKS(ms) ((TickType_t)(ms))
 inline void vTaskDelay(TickType_t) {}
 inline int xTaskCreatePinnedToCore(void (*)(void*), const char*, uint32_t, void*, int, void*, int) { return 1; }
+typedef void* TaskHandle_t;
+enum eTaskState { eRunning = 0, eReady, eBlocked, eSuspended, eDeleted, eInvalid };
+inline TaskHandle_t xTaskGetCurrentTaskHandleForCore(int) { return nullptr; }
+inline eTaskState eTaskGetState(TaskHandle_t) { return eReady; }
+inline const char* pcTaskGetName(TaskHandle_t) { return "?"; }
+inline unsigned uxTaskPriorityGet(TaskHandle_t) { return 0; }

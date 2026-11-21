@@ -936,6 +936,20 @@ void loop() {
   static uint32_t lastLoop = 0;                 // the main loop normally comes round every few ms: say when it didn't
   if (lastLoop && now - lastLoop > 1000) Serial.printf("[loop] held up %lu ms (at %.1f s)\n", (unsigned long)(now - lastLoop), lastLoop / 1000.0);
   lastLoop = now;
+  // The wake word stops for ~2.6 s at every HTTPS connection. While it is stuck, name what core 0 is running.
+  static uint32_t diagBeat = 0; static int diagN = 0;
+  uint32_t vb = voiceBeat;
+  if (vReady && vb && vState == V_IDLE && !vRequested && !alarmRinging && !micTest) {
+    int32_t stuck = int32_t(now - vb);
+    if (vb != diagBeat) { diagBeat = vb; diagN = 0; }
+    if ((diagN == 0 && stuck > 500) || (diagN == 1 && stuck > 1500)) {
+      diagN++;
+      TaskHandle_t c0 = xTaskGetCurrentTaskHandleForCore(0);
+      Serial.printf("[diag] listening stuck %ld ms: core 0 runs \"%s\" (priority %u), listening task state %d\n",
+                    (long)stuck, c0 ? pcTaskGetName(c0) : "?", c0 ? (unsigned)uxTaskPriorityGet(c0) : 0u,
+                    voiceTaskHandle ? (int)eTaskGetState(voiceTaskHandle) : -1);
+    }
+  }
   pollSerial();
   pollTouch(now);
   voicePoll(now);
