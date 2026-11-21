@@ -458,7 +458,10 @@ static void voiceBegin() {
   if (!recBuf || !playBuf) { Serial.println("[voice] no PSRAM: set Tools > PSRAM > OPI PSRAM. Voice is off."); return; }
   if (!micOk || !spkOk) { Serial.println("[voice] mic or speaker setup failed. Voice is off."); return; }
   if (!wakeBegin()) Serial.println("[wake] wake word is off; double-tap or \"ask\" still work");
-  xTaskCreatePinnedToCore(voiceTask, "voice", 20480, nullptr, 1, nullptr, 0);
+  // Priority 2, above the network task (1) on the same core: a check-in with the server held the wake word up for
+  // 2.6 s at a time at equal priority, and "Hey Dewy" said then was lost. Listening waits on the mic most of the
+  // time, so the network task still gets the rest of the core.
+  xTaskCreatePinnedToCore(voiceTask, "voice", 20480, nullptr, 2, nullptr, 0);
   vReady = true;
 }
 
