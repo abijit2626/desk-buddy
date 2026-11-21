@@ -933,6 +933,9 @@ void setup() {
 
 void loop() {
   uint32_t now = millis();
+  static uint32_t lastLoop = 0;                 // the main loop normally comes round every few ms: say when it didn't
+  if (lastLoop && now - lastLoop > 1000) Serial.printf("[loop] held up %lu ms (at %.1f s)\n", (unsigned long)(now - lastLoop), lastLoop / 1000.0);
+  lastLoop = now;
   pollSerial();
   pollTouch(now);
   voicePoll(now);

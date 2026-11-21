@@ -170,7 +170,7 @@ static bool wakeFeed(const int16_t* in, int n) {
     uint32_t t0 = micros();
     if (wakeNet->Invoke() != kTfLiteOk) return;
     wakeRunUs = micros() - t0;
-    if (wakeRunUs > 300000) Serial.printf("[wake] one run was held up for %lu ms\n", (unsigned long)(wakeRunUs / 1000));
+    if (wakeRunUs > 300000) Serial.printf("[wake] one run was held up for %lu ms (at %.1f s)\n", (unsigned long)(wakeRunUs / 1000), t0 / 1e6);
     uint8_t p = wakeOut->data.uint8[0];
     if (wakeWarm > 0) { wakeWarm--; return; }
     if (p > wakeBest) wakeBest = p;

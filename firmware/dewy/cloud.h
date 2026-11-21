@@ -309,6 +309,12 @@ static void installFirmware() {
   ESP.restart();
 }
 
+// Anything on the network task that takes over a second is printed with the time, to match against wake word hold-ups.
+static void netSlow(const char* what, uint32_t t0) {
+  uint32_t d = millis() - t0;
+  if (d > 1000) Serial.printf("[net] %s took %lu ms (at %.1f s)\n", what, (unsigned long)d, t0 / 1000.0);
+}
+
 static void netTask(void*) {
   netPrefs.begin("buddy", false);
   String tok = netPrefs.getString("token", "");
@@ -320,13 +326,13 @@ static void netTask(void*) {
       if (cloudOn()) {
         if (!deviceToken[0] && int32_t(now - nextRegister) >= 0) { if (!cloudRegister()) nextRegister = now + (lastRegisterCode < 0 ? 30UL * 1000UL : 10UL * 60UL * 1000UL); }   // no connection: try again soon
         if (deviceToken[0] && int32_t(now - nextSync) >= 0) {
-          cloudSync();
+          uint32_t t0 = millis(); cloudSync(); netSlow("sync", t0);
           nextSync = millis() + (dewyAsleep ? SYNC_ASLEEP_MS : SYNC_AWAKE_MS);
         }
         bool needCode;
         { NetLock lock; needCode = inbox.pairedKnown && !inbox.paired && !inbox.pairCode[0]; }
         if (deviceToken[0] && (wantPair || (needCode && int32_t(now - nextPair) >= 0))) {
-          wantPair = false; cloudRequestPair(); nextPair = millis() + 9UL * 60UL * 1000UL;
+          wantPair = false; uint32_t t0 = millis(); cloudRequestPair(); netSlow("pair code", t0); nextPair = millis() + 9UL * 60UL * 1000UL;
         }
         bool offer;
         { NetLock lock; offer = inbox.fwOffer; }
@@ -335,7 +341,10 @@ static void netTask(void*) {
           if (updateAllowed) installFirmware();           // and look again: it may have started a conversation meanwhile
         }
       }
-      if (cityOn && int32_t(now - nextWeather) >= 0) nextWeather = millis() + (fetchWeather() ? 30UL : 1UL) * 60UL * 1000UL;
+      if (cityOn && int32_t(now - nextWeather) >= 0) {
+        uint32_t t0 = millis(); bool ok = fetchWeather(); netSlow("weather", t0);
+        nextWeather = millis() + (ok ? 30UL : 1UL) * 60UL * 1000UL;
+      }
     }
     vTaskDelay(pdMS_TO_TICKS(250));
   }
