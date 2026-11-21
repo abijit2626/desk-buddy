@@ -63,6 +63,14 @@ int main() {
   fwProgress = -1;
   check("otherwise yes", voiceRequest());
 
+  printf("-- \"Hey Dewy\" while asleep only wakes it\n");
+  idle(); buddy.sleep(); poll();
+  check("asleep, it still hears \"Hey Dewy\"", buddy.mood() == face::SLEEPY && voiceRequest(true));
+  check("  but no conversation starts", !vRequested);
+  poll(); check("  and the face wakes up", buddy.mood() != face::SLEEPY);
+  idle(); buddy.sleep(); poll();
+  check("asleep, a tap still starts a conversation", voiceRequest(false) && vRequested);
+
   printf("-- firmware updates wait for the conversation (item 5)\n");
   idle(); vState = V_THINK; vRequested = true;
   pollCloud(200000);

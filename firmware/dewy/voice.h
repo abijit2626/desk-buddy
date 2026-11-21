@@ -61,6 +61,7 @@ static volatile bool vCancel = false;       // the main loop asks the voice task
 static uint32_t vTapAt = 0;                 // when a double-tap last started a turn (main loop only)
 static char vNotice[128] = "";              // something to show on screen after a turn that went wrong, written by the voice task
 static volatile bool vNoticeNew = false;
+static volatile bool vWakeUp = false;       // "Hey Dewy" while asleep: the main loop wakes the face, nothing else
 static volatile bool vShowClock = false;    // the question was about the time: show the clock after the answer
 static uint32_t vEndedAt = 0;               // when the last turn ended (main loop only): the speaker can rock Dewy
 static NoiseTracker noiseTrack;             // the room's background level while idle (voice task only)
@@ -282,14 +283,19 @@ static bool talkToCloud(int nSamples) {
     http.end();
     return false;
   }
+  vShowClock = http.header("x-dewy-show") == "clock";
   String ctype = http.header("Content-Type");
+  if (!ctype.startsWith("audio/") && vShowClock) {  // "what's the time?" and nothing else: no answer to say, just the clock
+    Serial.printf("[voice] a time question: showing the clock (%lu ms)\n", (unsigned long)(millis() - t0));
+    http.end();
+    return false;
+  }
   if (!ctype.startsWith("audio/")) {              // words only: nobody spoke, the day's voice budget is used up, or its voice failed
     Serial.println("[voice] the server answered in words only");
     sayServersWords(http, code);
     http.end();
     return false;
   }
-  vShowClock = http.header("x-dewy-show") == "clock";
   String heard = urlDecode(http.header("x-dewy-heard"));
   String reply = urlDecode(http.header("x-dewy-reply"));
   Serial.printf("[voice] heard: %s\n", heard.c_str());
@@ -462,6 +468,10 @@ static bool voiceRequest(bool byWake) {
   if (!vReady || vState != V_IDLE || vRequested) return false;
   if (buddy.mood() == face::ALARM || buddy.faceDown()) return false;
   if (fwProgress >= 0 || dewyResting) return false;   // switched off in the app: no talking
+  if (byWake && buddy.mood() == face::SLEEPY) {      // asleep: "Hey Dewy" just wakes it up, no conversation
+    vWakeUp = true;
+    return true;
+  }
   if (WiFi.status() != WL_CONNECTED || !cloudOn() || !deviceToken[0]) return false;
   vCancel = false;
   vByWake = byWake;
@@ -492,6 +502,10 @@ static void voicePoll(uint32_t now) {
       else if (st == V_THINK) buddy.setMood(face::THINKING);
       else if (st == V_SPEAK) buddy.talk();
     }
+  }
+  if (vWakeUp) {                                // "Hey Dewy" while asleep
+    vWakeUp = false;
+    if (buddy.mood() == face::SLEEPY) { interacted(); buddy.wake(); Serial.println("[wake] woke up"); }
   }
   if (vNoticeNew && st == V_IDLE) {             // the turn went wrong: say why on a card, once the face is back
     char msg[sizeof vNotice];

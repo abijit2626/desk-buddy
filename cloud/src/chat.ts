@@ -447,6 +447,11 @@ export async function handleChat(req: Request, env: ChatEnv, dev: { id: string; 
 
   // 3. words and a short memory
   if (heard === null) heard = cleanText(await prov.transcribe(wav!), MAX_HEARD, true) ?? "";
+  // "What's the time?" and nothing else: no AI answer and no voice, Dewy just shows its clock (a few seconds, not ten).
+  if (heard && justTheTime(heard))
+    return new Response(JSON.stringify({ heard, reply: "", show: "clock", audio: false }), {
+      headers: { ...COMMON_HEADERS, "content-type": "application/json; charset=utf-8", "x-dewy-show": "clock" },
+    });
   let reply: string;
   let tokens = 0;
   if (!heard) {
@@ -527,6 +532,21 @@ export function alarmAction(heard: string): "snooze" | "stop" | null {
 export function wantsClock(heard: string): boolean {
   const q = heard.toLowerCase();
   return /\b(time|clock)\b/.test(q) && !/\btimer\b/.test(q);
+}
+
+// The whole question is just "what's the time?" (any of the usual ways to say it, with "hey Dewy" or "please" around it).
+// Anything more ("what time is sunset?", "what time is my alarm?") goes to the AI as usual and still ends on the clock.
+const FILLER = /^(hey|hi|okay|ok|so|um|uh|dewy|dooey|duey|please|now|right now|currently|exactly|for me|again)\b ?| ?\b(hey|dewy|dooey|duey|please|now|right now|currently|exactly|for me|again)$/;
+const TIME_QUESTIONS = new Set([
+  "time", "the time", "what time", "what time is it", "what's the time", "whats the time", "what is the time",
+  "tell me the time", "show me the time", "show the time", "show me the clock", "show the clock", "clock", "the clock",
+  "do you know the time", "do you know what time it is", "can you tell me the time", "could you tell me the time",
+  "what time is it right", "time please",
+]);
+export function justTheTime(heard: string): boolean {
+  let q = heard.toLowerCase().replace(/[^a-z' ]+/g, " ").replace(/\s+/g, " ").trim();
+  for (let i = 0; i < 6; i++) { const t = q.replace(FILLER, "").trim(); if (t === q) break; q = t; }
+  return TIME_QUESTIONS.has(q);
 }
 
 function textAnswer(heard: string, reply: string): Response {

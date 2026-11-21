@@ -166,8 +166,14 @@ check("and a real question afterwards still works (nothing was used up)", r.stat
 
 // --- "what time is it?" shows the clock; a timer doesn't
 const clk = await register();
-r = await ask(clk, "what time is it");
-check("a time question asks Dewy to show its clock", r.spoken && r.show === "clock", r);
+r = await ask(clk, "What time is it?");
+check("\"what time is it?\" just shows the clock: no AI answer, nothing spoken", r.status === 200 && !r.spoken && r.show === "clock" && !r.reply, r);
+for (const q of ["What's the time?", "Hey Dewy, what's the time?", "Tell me the time please.", "what's the time right now", "Show me the clock."]) {
+  r = await ask(clk, q);
+  check(`  and so does "${q}"`, r.status === 200 && !r.spoken && r.show === "clock", r);
+}
+r = await ask(clk, "what time is sunset today");
+check("a longer question about a time is answered out loud, then shows the clock", r.spoken && r.show === "clock", r);
 r = await ask(clk, "tell me a joke");
 check("other questions don't", r.spoken && !r.show, r);
 r = await ask(clk, "start a 5 minute timer");
