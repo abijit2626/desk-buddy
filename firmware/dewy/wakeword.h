@@ -22,6 +22,10 @@
 #define WAKE_CUTOFF 0.98f     // same as the round 2 tests. Lower = easier to wake, more false wakes.
 #endif
 #ifndef WAKE_WINDOW
+#ifndef WAKE_GAIN
+#define WAKE_GAIN 4           // the wake word hears the mic 4x louder than recording does: MIC_SHIFT went from 14 to 16
+                              // for recording, and at 14 "Hey Dewy" woke it 5/5 in a normal voice (at 16 it needed shouting)
+#endif
 #define WAKE_WINDOW 5         // average of the last 5 scores (5 x 30 ms)
 #endif
 #define WAKE_ARENA_BYTES  (64 * 1024)   // memory for the model; the real need is printed at start-up
@@ -133,8 +137,11 @@ static void wakeReset() {
 }
 
 // Feeds microphone audio (16 kHz). Returns true when "Hey Dewy" was heard.
-static bool wakeFeed(const int16_t* s, int n) {
+static bool wakeFeed(const int16_t* in, int n) {
   if (!wakeOk || !wakeOn) return false;
+  if (n > 256) n = 256;                    // the voice task sends 160 at a time
+  int16_t s[256];
+  for (int i = 0; i < n; i++) { int v = in[i] * WAKE_GAIN; s[i] = v > 32767 ? 32767 : v < -32768 ? -32768 : v; }
   bool heard = false;
   wakeFrontendFeed(s, n, [&](const int8_t* f) {
     memcpy(wakeFrames[wakeFrameN++], f, WAKE_FEATURES);
