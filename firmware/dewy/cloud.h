@@ -352,7 +352,10 @@ static void netTask(void*) {
 
 static void startNetTask() {
   netLock = xSemaphoreCreateMutex();
-  tlsLock = xSemaphoreCreateMutex();
+  // A plain semaphore, not a mutex: a mutex held through a whole HTTPS request let the task keep a priority it borrowed
+  // from the Wi-Fi driver (23) for the entire handshake, and the wake word stopped for 2.5 s at every check-in.
+  tlsLock = xSemaphoreCreateBinary();
+  xSemaphoreGive(tlsLock);
   memset(&inbox, 0, sizeof inbox);
   inbox.weather = -1;
   xTaskCreatePinnedToCore(netTask, "net", 12288, nullptr, 1, nullptr, 0);

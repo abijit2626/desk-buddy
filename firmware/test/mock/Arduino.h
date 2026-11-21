@@ -43,6 +43,7 @@ inline EspClass ESP;
 typedef void* SemaphoreHandle_t;
 #define portMAX_DELAY 0xffffffffu
 inline SemaphoreHandle_t xSemaphoreCreateMutex() { static int m; return &m; }
+inline SemaphoreHandle_t xSemaphoreCreateBinary() { static int b; return &b; }
 #define pdTRUE 1
 inline int g_semTakes = 0, g_semGives = 0; inline bool g_semFail = false;   // tests count them, or make Take time out
 inline int xSemaphoreTake(SemaphoreHandle_t, uint32_t) { if (g_semFail) return 0; g_semTakes++; return 1; }
