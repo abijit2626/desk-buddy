@@ -134,7 +134,7 @@ static void drawFrame() {
 
   bool asleep = buddy.mood() == face::SLEEPY;
   float target = (buddy.faceDown() || (asleep && buddy.resting)) ? 0 : (asleep ? BRIGHTNESS_ASLEEP : BRIGHTNESS_AWAKE);
-  brightness += (target - brightness) * 0.08f;
+  brightness += (target - brightness) * (target > brightness ? 0.3f : 0.08f);   // light up fast on waking, fade slowly to sleep
   tft.setBrightness(uint8_t(brightness + 0.5f));
   if (buddy.faceDown() && brightness < 0.5f) return;   // lying on its face with the light off: nothing to draw
 

@@ -505,7 +505,9 @@ static void voicePoll(uint32_t now) {
   }
   if (vWakeUp) {                                // "Hey Dewy" while asleep
     vWakeUp = false;
-    if (buddy.mood() == face::SLEEPY) { interacted(); buddy.wake(); Serial.println("[wake] woke up"); }
+    if (buddy.mood() == face::SLEEPY) {           // eyes pop open (like a tap), then happy
+      interacted(); buddy.play1(face::SURPRISED, 1200, face::HAPPY); Serial.println("[wake] woke up");
+    }
   }
   if (vNoticeNew && st == V_IDLE) {             // the turn went wrong: say why on a card, once the face is back
     char msg[sizeof vNotice];

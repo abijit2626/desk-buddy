@@ -67,7 +67,7 @@ int main() {
   idle(); buddy.sleep(); poll();
   check("asleep, it still hears \"Hey Dewy\"", buddy.mood() == face::SLEEPY && voiceRequest(true));
   check("  but no conversation starts", !vRequested);
-  poll(); check("  and the face wakes up", buddy.mood() != face::SLEEPY);
+  poll(); check("  and the face wakes up (eyes pop open first)", buddy.mood() == face::SURPRISED);
   idle(); buddy.sleep(); poll();
   check("asleep, a tap still starts a conversation", voiceRequest(false) && vRequested);
 
