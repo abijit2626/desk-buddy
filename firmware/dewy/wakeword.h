@@ -3,7 +3,8 @@
 //   16 kHz audio -> micro frontend (40 features every 10 ms) -> int8 -> the streaming model every 30 ms
 //   -> average of the last WAKE_WINDOW scores against WAKE_CUTOFF.
 // Library: TensorFlowLite_ESP32 (Library Manager). The model is in hey_dewy_model.h.
-// Serial commands (typed in the Serial Monitor): "ww on", "ww off", "ww debug" (prints the best score every second).
+// Serial commands (typed in the Serial Monitor): "ww on", "ww off", "ww debug" (prints the scores every second),
+// "ww" (shows the settings), "ww cutoff 0.9", "ww gain 8", "ww reset". Cutoff and gain are saved and survive a restart.
 #pragma once
 #include <Arduino.h>
 #include <esp_heap_caps.h>
@@ -89,6 +90,7 @@ static int wakeFrontendFeed(const int16_t* s, int n, F onFrame) {
 }
 
 #ifndef WAKE_HOST_TEST   // everything below runs only on the ESP32
+#include <Preferences.h>
 // ---------------------------------------------------------------- the model
 static tflite::MicroInterpreter* wakeNet = nullptr;
 static TfLiteTensor* wakeIn = nullptr;
@@ -99,7 +101,23 @@ static int8_t wakeFrames[WAKE_STRIDE][WAKE_FEATURES];
 static int wakeFrameN = 0, wakeWarm = WAKE_WARMUP_RUNS;
 static uint8_t wakeScores[WAKE_WINDOW];
 static int wakeScoreN = 0;
-static uint8_t wakeBest = 0;
+static uint8_t wakeBest = 0, wakeBestAvg = 0;   // highest single score and highest average in the last second
+static float wakeCutoff = WAKE_CUTOFF;         // tuned with "ww cutoff", kept in flash
+static float wakeGain = WAKE_GAIN;             // tuned with "ww gain", kept in flash
+static void wakeLoadTuning() {
+  Preferences p;
+  if (!p.begin("wake", true)) return;           // nothing saved yet: the defaults above
+  float c = p.getFloat("cutoff", WAKE_CUTOFF), g = p.getFloat("gain", WAKE_GAIN);
+  p.end();
+  if (c >= 0.5f && c <= 0.99f) wakeCutoff = c;
+  if (g >= 1.0f && g <= 16.0f) wakeGain = g;
+}
+static void wakeSaveTuning() {
+  Preferences p;
+  if (!p.begin("wake", false)) return;
+  p.putFloat("cutoff", wakeCutoff); p.putFloat("gain", wakeGain);
+  p.end();
+}
 static uint32_t wakeBestAt = 0, wakeRunUs = 0;
 
 static bool wakeBegin() {
@@ -121,7 +139,8 @@ static bool wakeBegin() {
   wakeIn = net.input(0);
   wakeOut = net.output(0);
   if (wakeIn->bytes != WAKE_STRIDE * WAKE_FEATURES) { Serial.printf("[wake] unexpected model input size %u\n", (unsigned)wakeIn->bytes); return false; }
-  Serial.printf("[wake] ready: model uses %u bytes of its %u byte arena, cutoff %.2f\n", (unsigned)net.arena_used_bytes(), (unsigned)WAKE_ARENA_BYTES, WAKE_CUTOFF);
+  wakeLoadTuning();
+  Serial.printf("[wake] ready: model uses %u bytes of its %u byte arena, cutoff %.2f, gain %.1f\n", (unsigned)net.arena_used_bytes(), (unsigned)WAKE_ARENA_BYTES, wakeCutoff, wakeGain);
   wakeOk = true;
   return true;
 }
@@ -141,7 +160,7 @@ static bool wakeFeed(const int16_t* in, int n) {
   if (!wakeOk || !wakeOn) return false;
   if (n > 256) n = 256;                    // the voice task sends 160 at a time
   int16_t s[256];
-  for (int i = 0; i < n; i++) { int v = in[i] * WAKE_GAIN; s[i] = v > 32767 ? 32767 : v < -32768 ? -32768 : v; }
+  for (int i = 0; i < n; i++) { int v = int(in[i] * wakeGain); s[i] = v > 32767 ? 32767 : v < -32768 ? -32768 : v; }
   bool heard = false;
   wakeFrontendFeed(s, n, [&](const int8_t* f) {
     memcpy(wakeFrames[wakeFrameN++], f, WAKE_FEATURES);
@@ -160,11 +179,14 @@ static bool wakeFeed(const int16_t* in, int n) {
     if (wakeScoreN < WAKE_WINDOW) return;
     uint32_t sum = 0;
     for (int i = 0; i < WAKE_WINDOW; i++) sum += wakeScores[i];
-    if (sum / (255.0f * WAKE_WINDOW) >= WAKE_CUTOFF) heard = true;
+    uint8_t avg = uint8_t(sum / WAKE_WINDOW);
+    if (avg > wakeBestAvg) wakeBestAvg = avg;
+    if (avg / 255.0f >= wakeCutoff) heard = true;
   });
   if (wakeDebug && millis() - wakeBestAt > 1000) {
-    Serial.printf("[wake] best score %.2f, one run takes %lu us\n", wakeBest / 255.0f, (unsigned long)wakeRunUs);
-    wakeBest = 0;
+    Serial.printf("[wake] best score %.2f, best average %.2f (wakes at %.2f), one run takes %lu us\n",
+                  wakeBest / 255.0f, wakeBestAvg / 255.0f, wakeCutoff, (unsigned long)wakeRunUs);
+    wakeBest = 0; wakeBestAvg = 0;
     wakeBestAt = millis();
   }
   if (heard) { Serial.println("[wake] Hey Dewy!"); wakeReset(); }
@@ -176,8 +198,19 @@ static bool wakeCommand(const String& cmd) {
   if (cmd == "ww on") wakeOn = true;
   else if (cmd == "ww off") wakeOn = false;
   else if (cmd == "ww debug") wakeDebug = !wakeDebug;
-  else return false;
-  Serial.printf("[wake] %s, debug %s\n", wakeOn ? "listening" : "off", wakeDebug ? "on" : "off");
+  else if (cmd.startsWith("ww cutoff ")) {
+    float c = cmd.substring(10).toFloat();
+    if (c < 0.5f || c > 0.99f) { Serial.println("[wake] cutoff must be 0.50 to 0.99 (lower = wakes more easily, and by mistake more often)"); return true; }
+    wakeCutoff = c; wakeSaveTuning();
+  }
+  else if (cmd.startsWith("ww gain ")) {
+    float g = cmd.substring(8).toFloat();
+    if (g < 1.0f || g > 16.0f) { Serial.println("[wake] gain must be 1 to 16 (how much louder the wake word hears the mic)"); return true; }
+    wakeGain = g; wakeSaveTuning();
+  }
+  else if (cmd == "ww reset") { wakeCutoff = WAKE_CUTOFF; wakeGain = WAKE_GAIN; wakeSaveTuning(); }
+  else if (cmd != "ww") return false;
+  Serial.printf("[wake] %s, debug %s, cutoff %.2f, gain %.1f\n", wakeOn ? "listening" : "off", wakeDebug ? "on" : "off", wakeCutoff, wakeGain);
   return true;
 }
 #endif  // WAKE_HOST_TEST

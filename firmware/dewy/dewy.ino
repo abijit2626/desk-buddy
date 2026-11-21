@@ -578,6 +578,7 @@ static void printHelp() {
   Serial.println("Features: 8ball, weather sun|cloud|rain|off|show, timer [minutes] | timer stop,");
   Serial.println("          remind water|stretch, note <text>, bday [own], battery <0-100>|auto,");
   Serial.println("          affection <0-1>, tilt <x> <y>|off, facedown on|off, upside on|off");
+  Serial.println("Voice:    mic (loudness check), ask, ww on|off|debug, ww cutoff <0.50-0.99>, ww gain <1-16>, ww reset");
   Serial.println("System:   mem (free RAM and how long a frame takes), bench <command> (frame times after it)");
   Serial.println("Bond:     bond (level and progress), rest on|off (as if switched off in the app), miss on|off");
   Serial.println("Setup:    cal up, cal face, axes, wifi, wifi reset, setup, pair");
