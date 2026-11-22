@@ -358,5 +358,8 @@ static void startNetTask() {
   xSemaphoreGive(tlsLock);
   memset(&inbox, 0, sizeof inbox);
   inbox.weather = -1;
-  xTaskCreatePinnedToCore(netTask, "net", 12288, nullptr, 1, nullptr, 0);
+  // Core 1, beside the face loop (same priority, so they share it). On core 0 the HTTPS handshake either froze the
+  // wake word for 2.5 s (when it borrowed the Wi-Fi driver's priority) or, below the wake word, crawled for ~20 s
+  // until the server hung up. Here it takes a few seconds and the face just runs a little slower meanwhile.
+  xTaskCreatePinnedToCore(netTask, "net", 12288, nullptr, 1, nullptr, 1);
 }
