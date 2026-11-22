@@ -121,23 +121,38 @@ struct TlsGuard {
 // ---------------------------------------------------------------- HTTPS helper
 static char deviceToken[64] = "";
 
+// One connection to Dewy's server, kept open between check-ins. A fresh HTTPS handshake takes a few seconds of CPU on
+// the face's core (the face stutters meanwhile), and Dewy checks in every 8 s while awake, so it is done once and kept.
+// Only touched while holding TlsGuard, and closed before any other HTTPS (voice, alarm words, weather, updates), which
+// needs its memory.
+static WiFiClientSecure* cloudConn = nullptr;
+static void cloudConnClose() {
+  if (!cloudConn) return;
+  cloudConn->stop();
+  delete cloudConn;
+  cloudConn = nullptr;
+}
+
 static int httpsJson(const char* method, const String& url, const char* body, JsonDocument* out, bool sendToken = true, const char* regKey = nullptr) {
   TlsGuard tls;
-  WiFiClientSecure client;
-  client.setCACert(CA_BUNDLE);
-  client.setTimeout(15);
+  int code = -1;
+  for (int attempt = 0; attempt < 2; attempt++) {
+  bool reused = cloudConn && cloudConn->connected();
+  if (cloudConn && !reused) cloudConnClose();
+  if (!cloudConn) { cloudConn = new WiFiClientSecure; cloudConn->setCACert(CA_BUNDLE); cloudConn->setTimeout(15); }
   HTTPClient http;
+  http.setReuse(true);
   http.setUserAgent("Dewy-ESP32/1.0");
   http.setTimeout(15000);
-  if (!http.begin(client, url)) return -1;
+  if (!http.begin(*cloudConn, url)) { cloudConnClose(); return -1; }
   if (sendToken && deviceToken[0]) http.addHeader("Authorization", String("Bearer ") + deviceToken);
   if (regKey) http.addHeader("X-Register-Key", regKey);
   http.addHeader("X-Dewy-Version", DEWY_VERSION);
-  int code;
   if (strcmp(method, "GET") == 0) code = http.GET();
   else { http.addHeader("Content-Type", "application/json"); code = http.POST(body ? body : "{}"); }
+  if (code < 0 && reused) { http.end(); cloudConnClose(); continue; }   // the server had closed the old one: once more, fresh
   if (code < 0) {   // no answer at all: say why (TLS, DNS, memory), so a failed connection isn't a mystery
-    char err[96] = ""; client.lastError(err, sizeof err);
+    char err[96] = ""; cloudConn->lastError(err, sizeof err);
     Serial.printf("[cloud] %s %s failed: %s | TLS: %s | free internal RAM %u (largest block %u), clock %lu\n", method, url.c_str(),
                   http.errorToString(code).c_str(), err[0] ? err : "-", unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
                   unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)), (unsigned long)time(nullptr));
@@ -147,6 +162,9 @@ static int httpsJson(const char* method, const String& url, const char* body, Js
     if (deserializeJson(*out, payload.c_str())) out->clear();
   }
   http.end();
+  if (code < 0) cloudConnClose();
+  return code;
+  }
   return code;
 }
 
@@ -240,6 +258,7 @@ static int parseWeather(const char* s) {
 }
 static bool fetchWeather() {
   TlsGuard tls;
+  cloudConnClose();                              // its memory is needed for this connection
   WiFiClientSecure client;
   client.setCACert(CA_BUNDLE);
   HTTPClient http;
@@ -338,7 +357,7 @@ static void netTask(void*) {
         { NetLock lock; offer = inbox.fwOffer; }
         if (offer && updateAllowed) {
           TlsGuard tls;                                   // wait for a voice turn that is talking to the server
-          if (updateAllowed) installFirmware();           // and look again: it may have started a conversation meanwhile
+          if (updateAllowed) { cloudConnClose(); installFirmware(); }           // and look again: it may have started a conversation meanwhile
         }
       }
       if (cityOn && int32_t(now - nextWeather) >= 0) {

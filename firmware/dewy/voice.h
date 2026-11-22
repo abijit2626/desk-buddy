@@ -258,6 +258,7 @@ static void sayServersWords(HTTPClient& http, int code) {
 static bool talkToCloud(int nSamples) {
   TlsGuard tls(30000);                            // the network task may be mid-sync: wait for its turn
   if (!tls.ok) { Serial.println("[voice] the network is busy"); say("I'm busy right now. Try again in a moment."); return false; }
+  cloudConnClose();                              // the check-in connection is kept open: free its memory for this one
   uint32_t freeRam = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
   if (freeRam < 55000) {
     Serial.printf("[voice] not enough free memory for HTTPS (%u bytes)\n", (unsigned)freeRam);
@@ -351,6 +352,7 @@ static void spkTone(int freq, int ms, int volPct) {
 static int alarmVoiceCommand(int nSamples) {
   if (WiFi.status() != WL_CONNECTED || !cloudOn() || !deviceToken[0]) return ALARM_NONE;
   TlsGuard tls(8000);
+  if (tls.ok) cloudConnClose();                   // free the kept check-in connection's memory first
   if (!tls.ok || heap_caps_get_free_size(MALLOC_CAP_INTERNAL) < 55000) { Serial.println("[alarm] can't ask the server right now"); return ALARM_NONE; }
   WiFiClientSecure client;
   client.setCACert(CA_BUNDLE);

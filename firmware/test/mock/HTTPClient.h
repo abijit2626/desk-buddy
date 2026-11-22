@@ -25,7 +25,7 @@ struct HTTPClient {
     for (auto& kv : rh) { std::string have = kv.first; for (auto& c : have) c = char(tolower(c)); if (have == want) return String(kv.second); }
     return String("");
   }
-  void setTimeout(int) {} void setFollowRedirects(followRedirects_t) {}
+  void setTimeout(int) {} void setFollowRedirects(followRedirects_t) {} void setReuse(bool) {}
   int run(const char* m, const char* body, size_t n = 0) {
     MockReply r = g_http(m, url, body ? std::string(body, n ? n : strlen(body)) : "", headers + "User-Agent: " + ua + "\n");
     resp = r.body; rh = r.headers; chunked = r.chunked;
