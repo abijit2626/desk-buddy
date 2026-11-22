@@ -173,7 +173,8 @@
 #endif
 
 #ifndef FRAME_MS
-#define FRAME_MS        33         // about 30 frames a second. With the parallel screen, 16 (about 60) is smoother
+#define FRAME_MS        33         // about 30 frames a second. With the parallel screen, 25 (40 a second): a frame takes
+                                   // about 19 ms to draw, and the rest of each 25 ms goes to the network task
 #endif
 #ifndef SCREEN_DMA
 #define SCREEN_DMA      1          // send each strip by DMA while the next is drawn. 0 = plain blocking sends

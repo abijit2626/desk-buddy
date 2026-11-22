@@ -928,6 +928,9 @@ void setup() {
   wdt.trigger_panic = true;
   esp_task_wdt_reconfigure(&wdt);
   lastInteract = lastFrame = millis();
+  // The face comes first on its core: the loop runs above the network task (2 vs 1) and rests between frames (see the
+  // end of loop()), so check-ins only get the spare time and the animation stays steady.
+  vTaskPrioritySet(nullptr, 2);
   Serial.println("Type \"help\" for test commands.");
 }
 
@@ -964,5 +967,10 @@ void loop() {
   checkRest(now);
   checkBond(now);
   saveAffection(now);
-  if (now - lastFrame >= FRAME_MS) drawFrame();
+  // A frame every FRAME_MS, resting in between so the network task on this core gets the spare time. While a fresh
+  // HTTPS connection is being set up (a few seconds of maths), frames are spaced out so it finishes before the
+  // server gives up on it: the face runs at 20 frames a second meanwhile instead of stuttering.
+  uint32_t frameMs = netHandshaking ? 50 : FRAME_MS;
+  if (millis() - lastFrame >= frameMs) drawFrame();
+  else vTaskDelay(1);
 }

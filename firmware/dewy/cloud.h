@@ -126,6 +126,7 @@ static char deviceToken[64] = "";
 // Only touched while holding TlsGuard, and closed before any other HTTPS (voice, alarm words, weather, updates), which
 // needs its memory.
 static WiFiClientSecure* cloudConn = nullptr;
+static volatile bool netHandshaking = false;   // a fresh HTTPS connection is being set up: the face slows down to make room
 static void cloudConnClose() {
   if (!cloudConn) return;
   cloudConn->stop();
@@ -148,8 +149,10 @@ static int httpsJson(const char* method, const String& url, const char* body, Js
   if (sendToken && deviceToken[0]) http.addHeader("Authorization", String("Bearer ") + deviceToken);
   if (regKey) http.addHeader("X-Register-Key", regKey);
   http.addHeader("X-Dewy-Version", DEWY_VERSION);
+  netHandshaking = !reused;
   if (strcmp(method, "GET") == 0) code = http.GET();
   else { http.addHeader("Content-Type", "application/json"); code = http.POST(body ? body : "{}"); }
+  netHandshaking = false;
   if (code < 0 && reused) { http.end(); cloudConnClose(); continue; }   // the server had closed the old one: once more, fresh
   if (code < 0) {   // no answer at all: say why (TLS, DNS, memory), so a failed connection isn't a mystery
     char err[96] = ""; cloudConn->lastError(err, sizeof err);
@@ -267,7 +270,10 @@ static bool fetchWeather() {
   snprintf(url, sizeof url, "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f&current=weather_code,is_day", float(cityLat), float(cityLon));
   bool ok = false;
   if (http.begin(client, url)) {
-    if (http.GET() == 200) {
+    netHandshaking = true;                       // always a fresh connection: the face makes room
+    int code = http.GET();
+    netHandshaking = false;
+    if (code == 200) {
       int w = parseWeather(http.getString().c_str());
       if (w >= 0) { NetLock lock; inbox.weather = w; ok = true; }
     }

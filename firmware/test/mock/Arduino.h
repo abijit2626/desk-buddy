@@ -59,6 +59,7 @@ inline void configTzTime(const char* tz, const char*, const char* = nullptr, con
 typedef uint32_t TickType_t;
 #define pdMS_TO_TICKS(ms) ((TickType_t)(ms))
 inline void vTaskDelay(TickType_t) {}
+inline void vTaskPrioritySet(void*, unsigned) {}
 inline int xTaskCreatePinnedToCore(void (*)(void*), const char*, uint32_t, void*, int, void*, int) { return 1; }
 typedef void* TaskHandle_t;
 enum eTaskState { eRunning = 0, eReady, eBlocked, eSuspended, eDeleted, eInvalid };
